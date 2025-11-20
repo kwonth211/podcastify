@@ -1,0 +1,89 @@
+name: Daily Podcast Generation
+
+on:
+    # 매일 오전 9시 (한국시간)에 실행
+    # UTC 시간으로 설정 (한국시간 -9시간)
+    # 한국시간 오전 9시 = UTC 0시
+    # schedule:
+    #     - cron: "0 0 * * *" # 매일 UTC 0시 (한국시간 오전 9시)
+
+    # feat/podcast-workflow 브랜치가 push될 때 실행
+    push:
+        branches:
+            - feat/podcast-workflow
+
+    # 수동 실행도 가능
+    workflow_dispatch:
+        inputs:
+            urls:
+                description: "URLs to process (comma-separated or file path)"
+                required: false
+                type: string
+
+permissions:
+    contents: write
+
+jobs:
+    generate-and-upload:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y ffmpeg
+
+            - name: Install Python dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+                  pip install boto3  # Cloudflare R2 업로드용 (S3 호환)
+                  # Gemini TTS는 기본적으로 포함되어 있음
+
+            - name: Generate Podcast and Upload to R2
+              id: generate
+              env:
+                  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+                  R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+                  R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+                  URLS: ${{ github.event.inputs.urls }}
+                  TIMESTAMP: ${{ github.run_number }}-${{ github.run_id }}
+                  GITHUB_OUTPUT: ${{ github.output }}
+              run: |
+                  python3 generate_podcast_workflow.py
+
+            - name: Upload artifacts (backup)
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: podcast-files-${{ github.run_number }}-${{ github.run_id }}
+                  path: |
+                      data/audio/*.mp3
+                      data/transcripts/*.txt
+                  retention-days: 7
+
+            - name: Create summary
+              if: success()
+              run: |
+                  echo "## Podcast Generation Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "✅ Podcast generated successfully!" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "**Generated Files:**" >> $GITHUB_STEP_SUMMARY
+                  if [ -n "${{ steps.generate.outputs.audio_file }}" ]; then
+                    echo "- Audio: \`${{ steps.generate.outputs.audio_file }}\`" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  if [ -n "${{ steps.generate.outputs.r2_url }}" ]; then
+                    echo "- R2 URL: ${{ steps.generate.outputs.r2_url }}" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "**Run ID:** ${{ github.run_number }}-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
