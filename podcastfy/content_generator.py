@@ -61,12 +61,9 @@ class LLMBackend:
         elif (
             "gemini" in self.model_name.lower()
         ):  # keeping original gemini as a special case while we build confidence on LiteLLM
-            api_key = os.environ.get(api_key_label) or os.environ.get("GEMINI_API_KEY")
-            if not api_key:
-                raise ValueError(f"API key not found. Please set {api_key_label} or GEMINI_API_KEY environment variable.")
-            
+
             self.llm = ChatGoogleGenerativeAI(
-                api_key=api_key,
+                api_key=os.environ["GEMINI_API_KEY"],
                 model=model_name,
                 max_output_tokens=max_output_tokens,
                 **common_params,
