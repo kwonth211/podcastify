@@ -178,14 +178,14 @@ def main():
     try:
         conv_config = load_conversation_config()
         config_dict = conv_config.to_dict()
-        default_tts = config_dict.get("text_to_speech", {}).get("default_tts_model", "edge")
+        default_tts = config_dict.get("text_to_speech", {}).get("default_tts_model", "elevenlabs")
         print(f"📋 Using config from conversation_config.yaml:")
         print(f"   - TTS Model: {default_tts}")
         print(f"   - Max Chunks: {config_dict.get('max_num_chunks', 4)}")
         print(f"   - Min Chunk Size: {config_dict.get('min_chunk_size', 2000)}")
     except Exception as e:
         print(f"⚠️  Warning: Could not load config file, using defaults: {e}")
-        default_tts = "edge"
+        default_tts = "elevenlabs"
     
     # Generate podcast
     print(f"\n🎙️  Generating podcast...")

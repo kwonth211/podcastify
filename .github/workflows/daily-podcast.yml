@@ -58,9 +58,10 @@ jobs:
               id: generate
               env:
                   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+                  ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
                   R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
                   R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+                  R2_DEV_SUBDOMAIN: ${{ secrets.R2_DEV_SUBDOMAIN }}
                   URLS: ${{ github.event.inputs.urls }}
                   TIMESTAMP: ${{ github.run_number }}-${{ github.run_id }}
                   GITHUB_OUTPUT: ${{ github.output }}
