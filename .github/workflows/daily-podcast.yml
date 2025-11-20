@@ -49,6 +49,11 @@ jobs:
                   pip install boto3  # Cloudflare R2 업로드용 (S3 호환)
                   # Gemini TTS는 기본적으로 포함되어 있음
 
+            - name: Install Playwright browsers
+              run: |
+                  python -m playwright install chromium
+                  python -m playwright install-deps chromium
+
             - name: Generate Podcast and Upload to R2
               id: generate
               env:

@@ -23,7 +23,9 @@ def load_urls_from_file(filepath: str) -> List[str]:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    urls.append(line)
+                    # Handle comma-separated URLs in a single line
+                    line_urls = [url.strip() for url in line.split(',') if url.strip()]
+                    urls.extend(line_urls)
     return urls
 
 
