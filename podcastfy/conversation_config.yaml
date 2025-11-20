@@ -8,8 +8,8 @@ dialogue_structure:
   - "Introduction"
   - "Main Content Summary"
   - "Conclusion"
-podcast_name: "PODCASTIFY"
-podcast_tagline: "Your Personal Generative AI Podcast"
+podcast_name: "뉴스 요약"
+podcast_tagline: "오늘의 주요 뉴스를 요약해드립니다"
 output_language: "Korean"
 engagement_techniques:
   - "rhetorical questions"
@@ -17,9 +17,9 @@ engagement_techniques:
   - "analogies"
   - "humor"
 creativity: 1
-user_instructions: ""
-max_num_chunks: 4 # maximum number of rounds of discussions in longform (adjusted for ~10 min podcast)
-min_chunk_size: 2000 # minimum number of characters to generate a round of discussion in longform (adjusted for ~10 min podcast)
+user_instructions: "이 팟캐스트는 뉴스 기사를 요약하고 분석하는 프로그램입니다. 도입부에서는 '오늘의 주요 뉴스를 요약해드리겠습니다'라고 간단히 소개하고 바로 뉴스 내용으로 들어갑니다."
+max_num_chunks: 3 # maximum number of rounds of discussions in longform (adjusted for ~10 min podcast)
+min_chunk_size: 2500 # minimum number of characters to generate a round of discussion in longform (adjusted for ~10 min podcast)
 
 text_to_speech:
   default_tts_model: "openai"
@@ -51,4 +51,4 @@ text_to_speech:
       model: "en-US-Studio-MultiSpeaker"
   audio_format: "mp3"
   temp_audio_dir: "data/audio/tmp/"
-  ending_message: "다음에 또 만나요!"
+  ending_message: "오늘의 뉴스 요약을 마칩니다. 감사합니다!"

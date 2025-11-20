@@ -76,12 +76,16 @@ def upload_to_r2(
             config=s3_config
         )
         
-        # Prepare file key
+        # Prepare file key (URL encode if needed)
         filename = Path(file_path).name
         if timestamp:
             file_key = f"{timestamp}_{filename}"
         else:
             file_key = filename
+        
+        # URL encode file key for public URL
+        from urllib.parse import quote
+        encoded_file_key = quote(file_key, safe='')
         
         # Determine content type
         content_type = 'application/octet-stream'
@@ -99,9 +103,26 @@ def upload_to_r2(
         )
         
         # Construct public URL
-        # R2 public URL format: https://{account_id}.r2.cloudflarestorage.com/{bucket}/{key}
-        # Or use custom domain if configured
-        public_url = f"{endpoint_url}/{bucket_name}/{file_key}"
+        # Option 1: Use custom domain if provided
+        custom_domain = os.environ.get('R2_CUSTOM_DOMAIN', '')
+        if custom_domain:
+            public_url = f"{custom_domain.rstrip('/')}/{bucket_name}/{encoded_file_key}"
+            print(f"✅ Using custom domain: {custom_domain}")
+        else:
+            # Option 2: Use R2.dev subdomain (if public access is enabled)
+            # Get R2.dev subdomain from environment variable or construct from endpoint
+            r2_dev_subdomain = os.environ.get('R2_DEV_SUBDOMAIN', '')
+            if r2_dev_subdomain:
+                # Use provided R2.dev subdomain
+                # R2.dev subdomain uses file key directly without bucket name
+                public_url = f"{r2_dev_subdomain.rstrip('/')}/{encoded_file_key}"
+                print(f"✅ Using R2.dev subdomain: {r2_dev_subdomain}")
+            else:
+                # Fallback: Try to construct from endpoint (may not work)
+                account_id = endpoint_url.split('//')[1].split('.')[0]
+                # R2.dev subdomain uses file key directly without bucket name
+                public_url = f"https://{bucket_name}.{account_id}.r2.dev/{encoded_file_key}"
+                print(f"⚠️  Using constructed R2.dev subdomain (set R2_DEV_SUBDOMAIN for better results)")
         
         print(f"✅ Successfully uploaded to R2: {file_key}")
         print(f"📎 Bucket: {bucket_name}")
@@ -157,14 +178,14 @@ def main():
     try:
         conv_config = load_conversation_config()
         config_dict = conv_config.to_dict()
-        default_tts = config_dict.get("text_to_speech", {}).get("default_tts_model", "gemini")
+        default_tts = config_dict.get("text_to_speech", {}).get("default_tts_model", "edge")
         print(f"📋 Using config from conversation_config.yaml:")
         print(f"   - TTS Model: {default_tts}")
         print(f"   - Max Chunks: {config_dict.get('max_num_chunks', 4)}")
         print(f"   - Min Chunk Size: {config_dict.get('min_chunk_size', 2000)}")
     except Exception as e:
         print(f"⚠️  Warning: Could not load config file, using defaults: {e}")
-        default_tts = "gemini"
+        default_tts = "edge"
     
     # Generate podcast
     print(f"\n🎙️  Generating podcast...")
@@ -181,6 +202,11 @@ def main():
             print("❌ No output file generated")
             sys.exit(1)
         
+        # Verify file exists
+        if not os.path.exists(result):
+            print(f"❌ Generated file does not exist: {result}")
+            sys.exit(1)
+        
         print(f"✅ Podcast generated successfully: {result}")
         write_github_output("audio_file", result)
         
@@ -188,6 +214,8 @@ def main():
         r2_url = upload_to_r2(result, timestamp=timestamp)
         if r2_url:
             write_github_output("r2_url", r2_url)
+        else:
+            print("⚠️  R2 upload failed or skipped, but continuing...")
         
         # Upload transcript to R2
         transcript_file = find_latest_file("data/transcripts/*.txt")
