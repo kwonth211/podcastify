@@ -22,7 +22,7 @@ max_num_chunks: 4 # maximum number of rounds of discussions in longform (adjuste
 min_chunk_size: 2000 # minimum number of characters to generate a round of discussion in longform (adjusted for ~10 min podcast)
 
 text_to_speech:
-  default_tts_model: "edge"
+  default_tts_model: "openai"
   output_directories:
     transcripts: "./data/transcripts"
     audio: "./data/audio"
