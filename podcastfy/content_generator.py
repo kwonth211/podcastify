@@ -199,15 +199,15 @@ class LongFormContentGenerator:
         # Add part-specific instructions
         if part_idx == 0:
             enhanced_params["instruction"] = f"""
-            ALWAYS START THE CONVERSATION GREETING THE AUDIENCE: Welcome to {enhanced_params["podcast_name"]} - {enhanced_params["podcast_tagline"]}.
-            You are generating the Introduction part of a long podcast conversation.
-            Don't cover any topics yet, just introduce yourself and the topic. Leave the rest for later parts, following these guidelines:
+            ALWAYS START THE CONVERSATION WITH A BRIEF NEWS SUMMARY INTRODUCTION: {enhanced_params.get("podcast_tagline", "오늘의 주요 뉴스를 요약해드리겠습니다")}.
+            You are generating the Introduction part of a news summary podcast conversation.
+            Briefly introduce that you will summarize today's news articles, then immediately start discussing the news content. Keep the introduction very short (1-2 sentences) and get straight to the news summary. Following these guidelines:
             """
         elif part_idx == total_parts - 1:
             enhanced_params["instruction"] = f"""
-            You are generating the last part of a long podcast conversation. 
+            You are generating the last part of a news summary podcast conversation. 
             {COMMON_INSTRUCTIONS}
-            For this part, discuss the below INPUT and then make concluding remarks in a podcast conversation format and END THE CONVERSATION GREETING THE AUDIENCE WITH PERSON1 ALSO SAYING A GOOD BYE MESSAGE, following these guidelines:
+            For this part, discuss the below INPUT and then make concluding remarks in a news summary format. END THE CONVERSATION WITH A BRIEF CLOSING MESSAGE like "오늘의 뉴스 요약을 마칩니다. 감사합니다!" (keep it very short, 1-2 sentences), following these guidelines:
             """
         else:
             enhanced_params["instruction"] = f"""
