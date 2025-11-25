@@ -10,6 +10,7 @@ import os
 import uuid
 import typer
 import yaml
+from datetime import datetime
 from podcastfy.content_parser.content_extractor import ContentExtractor
 from podcastfy.content_generator import ContentGenerator
 from podcastfy.text_to_speech import TextToSpeech
@@ -108,10 +109,11 @@ def process_content(
                 combined_content += f"\n\n{topic_content}"
 
             # Generate Q&A content using output directory from conversation config
-            random_filename = f"transcript_{uuid.uuid4().hex}.txt"
+            date_str = datetime.now().strftime("%Y%m%d")
+            transcript_filename = f"transcript_{date_str}.txt"
             transcript_filepath = os.path.join(
                 output_directories.get("transcripts", "data/transcripts"),
-                random_filename,
+                transcript_filename,
             )
             qa_content = content_generator.generate_qa_content(
                 combined_content,
@@ -131,9 +133,10 @@ def process_content(
                 conversation_config=conv_config.to_dict(),
             )
 
-            random_filename = f"podcast_{uuid.uuid4().hex}.mp3"
+            date_str = datetime.now().strftime("%Y%m%d")
+            audio_filename = f"podcast_{date_str}.mp3"
             audio_file = os.path.join(
-                output_directories.get("audio", "data/audio"), random_filename
+                output_directories.get("audio", "data/audio"), audio_filename
             )
             text_to_speech.convert_to_speech(qa_content, audio_file)
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
