@@ -9,5 +9,3 @@
 # 여러 URL을 한 줄에 입력하려면 쉼표로 구분:
 # https://example.com/article1,https://example.com/article2
 
-# Auto-updated URLs from Naver News Economy section
-https://n.news.naver.com/mnews/article/018/0006171112,https://n.news.naver.com/mnews/article/014/0005439312,https://n.news.naver.com/mnews/article/011/0004559735,https://n.news.naver.com/mnews/article/082/0001355337,https://n.news.naver.com/mnews/article/014/0005439449
