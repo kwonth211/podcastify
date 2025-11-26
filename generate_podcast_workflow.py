@@ -9,6 +9,7 @@ import glob
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
+import pytz
 import boto3
 from botocore.config import Config
 from podcastfy.client import generate_podcast
@@ -156,7 +157,10 @@ def main():
     """Main workflow function."""
     # Get inputs from environment variables (set by GitHub Actions)
     urls_input = os.environ.get('URLS', '')
-    timestamp = os.environ.get('TIMESTAMP', datetime.now().strftime('%Y%m%d_%H%M%S'))
+    # Generate timestamp in KST (Korea Standard Time) - YYYY-MM-DD format only
+    kst = pytz.timezone('Asia/Seoul')
+    kst_time = datetime.now(kst)
+    timestamp = os.environ.get('TIMESTAMP', kst_time.strftime('%Y-%m-%d'))
     
     # If no URLs provided, try to load from default file
     if not urls_input:
