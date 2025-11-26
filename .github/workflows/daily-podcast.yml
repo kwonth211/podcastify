@@ -3,14 +3,14 @@ name: Daily Podcast Generation
 on:
   # 매일 오전 7시 (한국시간)에 실행
   # UTC 시간으로 설정 (한국시간 -9시간)
-  # 한국시간 오전 7시 = UTC 22시 (전날)
-  schedule:
-    - cron: "0 22 * * *" # 매일 UTC 22시 (한국시간 오전 7시)
+  # # 한국시간 오전 7시 = UTC 22시 (전날)
+  # schedule:
+  #   - cron: "0 22 * * *" # 매일 UTC 22시 (한국시간 오전 7시)
 
   # feat/podcast-workflow 브랜치가 push될 때 실행
-  # push:
-  #   branches:
-  #     - feat/podcast-workflow
+  push:
+    branches:
+      - main
 
   # 수동 실행도 가능
   workflow_dispatch:
