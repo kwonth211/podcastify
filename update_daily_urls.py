@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#  !/usr/bin/env python3
 """
 Update daily_urls.txt with latest headlines from Naver News Economy section
 Extracts links from elements with class "sa_item _SECTION_HEADLINE"
