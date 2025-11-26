@@ -42,8 +42,9 @@ text_to_speech:
       answer: "ko-KR-InJoonNeural"
   gemini:
     default_voices:
-      question: "ko-KR-Neural2-D" # 남성 목소리 (더 자연스러운 톤)
-      answer: "ko-KR-Neural2-B" # 여성 목소리 (더 자연스러운 톤)
+      question: "카론" # 남성 목소리 (gemini-2.5-pro-tts)
+      answer: "Aoede" # 여성 목소리 (gemini-2.5-pro-tts)
+    model: "gemini-2.5-pro-tts"
   geminimulti:
     default_voices:
       question: "R"
