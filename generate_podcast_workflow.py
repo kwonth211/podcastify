@@ -271,21 +271,23 @@ def main():
         else:
             print("⚠️  R2 upload failed or skipped, but continuing...")
         
-        # Upload transcript and timeline files to R2
-        date_str = extract_date_str(timestamp)
-        main_transcript, timeline_files = find_transcript_files(date_str)
+        # Upload transcript to R2
+        transcript_file = find_latest_file("data/transcripts/*.txt")
+        if transcript_file and not transcript_file.endswith('_timeline.txt') and not transcript_file.endswith('_articles_timeline.txt'):
+            print(f"📄 Uploading transcript: {transcript_file}")
+            upload_to_r2(transcript_file, timestamp=timestamp)
         
-        # Upload main transcript file
-        if main_transcript:
-            print(f"📄 Uploading transcript: {main_transcript}")
-            upload_to_r2(main_transcript, timestamp=timestamp)
-        else:
-            print("⚠️  No main transcript file found to upload")
+        # Upload timeline files to R2
+        timeline_file = find_latest_file("data/transcripts/*_timeline.txt")
+        if timeline_file:
+            print(f"📊 Uploading timeline: {timeline_file}")
+            upload_to_r2(timeline_file, timestamp=timestamp)
         
-        # Upload timeline files
-        for f in timeline_files:
-            print(f"📊 Uploading timeline: {f}")
-            upload_to_r2(f, timestamp=timestamp)
+        # Upload articles timeline file to R2
+        articles_timeline_file = find_latest_file("data/transcripts/*_articles_timeline.txt")
+        if articles_timeline_file:
+            print(f"📊 Uploading articles timeline: {articles_timeline_file}")
+            upload_to_r2(articles_timeline_file, timestamp=timestamp)
         
         sys.exit(0)
         
