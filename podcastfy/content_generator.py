@@ -971,8 +971,8 @@ For each topic, estimate its starting position as a ratio (0.0 to 1.0) based on 
 
 Return ONLY valid JSON array, no other text:
 [
-  {"number": 1, "title": "토픽 제목", "ratio": 0.0},
-  {"number": 2, "title": "토픽 제목", "ratio": 0.15},
+  {{"number": 1, "title": "토픽 제목", "ratio": 0.0}},
+  {{"number": 2, "title": "토픽 제목", "ratio": 0.15}},
   ...
 ]
 
