@@ -73,6 +73,10 @@ def process_content(
         # Get output directories from conversation config
         tts_config = conv_config.get("text_to_speech", {})
         output_directories = tts_config.get("output_directories", {})
+        
+        # Initialize for timeline generation
+        content_generator = None
+        transcript_filepath = None
 
         if transcript_file:
             logger.info(f"Using transcript file: {transcript_file}")
@@ -153,7 +157,7 @@ def process_content(
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
             
             # Generate timeline from transcript using actual audio duration
-            if urls:
+            if content_generator and transcript_filepath:
                 audio = AudioSegment.from_file(audio_file)
                 audio_duration_seconds = len(audio) / 1000.0
                 timeline_filepath = transcript_filepath.replace('transcript_', 'timeline_')

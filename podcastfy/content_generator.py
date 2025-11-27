@@ -929,14 +929,12 @@ class ContentGenerator:
             Optional[str]: Path to the generated timeline file, or None if failed
         """
         try:
-            # Extract topics from transcript using LLM
             topics = self._extract_topics_from_transcript(transcript)
             
             if not topics:
                 logger.warning("No topics extracted from transcript")
                 return None
             
-            # Convert ratios to actual timestamps
             timeline_entries = []
             for topic in topics:
                 timestamp_seconds = audio_duration_seconds * topic['ratio']
@@ -946,12 +944,10 @@ class ContentGenerator:
                     'number': topic['number']
                 })
             
-            # Format and save
             timeline_content = self._format_timeline(timeline_entries)
             with open(output_filepath, "w", encoding="utf-8") as file:
                 file.write(timeline_content)
             
-            logger.info(f"Timeline saved to {output_filepath}")
             print(f"Timeline saved to {output_filepath}")
             return output_filepath
             
@@ -991,7 +987,7 @@ Rules:
         
         try:
             chain = prompt | self.llm | StrOutputParser()
-            response = chain.invoke({"transcript": transcript[:15000]})  # Limit input size
+            response = chain.invoke({"transcript": transcript[:15000]})
             
             # Parse JSON response
             response = response.strip()
@@ -1000,9 +996,11 @@ Rules:
                 response = re.sub(r'\n?```$', '', response)
             
             topics = json.loads(response)
-            logger.info(f"Extracted {len(topics)} topics from transcript")
             return topics
             
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {str(e)}")
+            return []
         except Exception as e:
             logger.error(f"Error extracting topics: {str(e)}")
             return []
