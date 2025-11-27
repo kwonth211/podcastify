@@ -74,9 +74,7 @@ def process_content(
         tts_config = conv_config.get("text_to_speech", {})
         output_directories = tts_config.get("output_directories", {})
         
-        # Initialize for timeline generation
         content_generator = None
-        transcript_filepath = None
 
         if transcript_file:
             logger.info(f"Using transcript file: {transcript_file}")
@@ -157,12 +155,15 @@ def process_content(
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
             
             # Generate timeline from transcript using actual audio duration
-            if content_generator and transcript_filepath:
+            if content_generator:
                 audio = AudioSegment.from_file(audio_file)
                 audio_duration_seconds = len(audio) / 1000.0
-                timeline_filepath = transcript_filepath.replace('transcript_', 'timeline_')
+                timeline_file = os.path.join(
+                    output_directories.get("transcripts", "data/transcripts"),
+                    f"timeline_{date_str}.txt"
+                )
                 content_generator.generate_timeline_from_transcript(
-                    qa_content, audio_duration_seconds, timeline_filepath
+                    qa_content, audio_duration_seconds, timeline_file
                 )
             
             return audio_file
