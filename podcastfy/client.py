@@ -92,20 +92,13 @@ def process_content(
             )
 
             combined_content = ""
-            article_headlines = []  # Store headlines for each article
             
             if urls:
                 logger.info(f"Processing {len(urls)} links")
                 contents_list = []
                 for i, link in enumerate(urls):
                     content, headline = content_extractor.extract_content_with_headline(link)
-                    contents_list.append(f"Article {i+1} Headline: {headline}\n{content}")
-                    if headline:
-                        article_headlines.append((link, headline))
-                        logger.info(f"Extracted headline for {link}: {headline[:50]}...")
-                    else:
-                        # Use URL as fallback headline
-                        article_headlines.append((link, link))
+                    contents_list.append(f"Article {i+1}: {headline}\n{content}")
                 combined_content = "\n\n".join(contents_list)
 
             if text:
@@ -134,8 +127,7 @@ def process_content(
                 combined_content,
                 image_file_paths=image_paths or [],
                 output_filepath=transcript_filepath,
-                longform=longform,
-                article_headlines=article_headlines if urls else []
+                longform=longform
             )
 
         if generate_audio:
@@ -160,12 +152,14 @@ def process_content(
             text_to_speech.convert_to_speech(qa_content, audio_file)
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
             
-            # Generate timeline using actual audio duration
-            if urls and hasattr(content_generator, 'timeline_ratios'):
+            # Generate timeline from transcript using actual audio duration
+            if urls:
                 audio = AudioSegment.from_file(audio_file)
                 audio_duration_seconds = len(audio) / 1000.0
                 timeline_filepath = transcript_filepath.replace('transcript_', 'timeline_')
-                content_generator.generate_article_timeline(audio_duration_seconds, timeline_filepath)
+                content_generator.generate_timeline_from_transcript(
+                    qa_content, audio_duration_seconds, timeline_filepath
+                )
             
             return audio_file
         else:

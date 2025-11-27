@@ -814,14 +814,14 @@ class ContentGenerator:
         )
         user_instructions = self.config_conversation.get("user_instructions", "")
 
-        # Add timeline marker instruction
-        marker_instruction = " IMPORTANT: When transitioning to a new article, insert the marker ((Article Start: N)) where N is the article number (e.g., ((Article Start: 1))). Ensure this marker appears exactly before the discussion of that article begins."
-
-        user_instructions = (
-            "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
-            + user_instructions + marker_instruction
-            + "]]"
-        )
+        if user_instructions:
+            user_instructions = (
+                "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
+                + user_instructions
+                + "]]"
+            )
+        else:
+            user_instructions = ""
 
         new_system_message = (
             prompt_template.messages[0].prompt.template + "\n" + user_instructions
@@ -843,8 +843,7 @@ class ContentGenerator:
         input_texts: str = "",
         image_file_paths: List[str] = [],
         output_filepath: Optional[str] = None,
-        longform: bool = False,
-        article_headlines: List[Tuple[str, str]] = []
+        longform: bool = False
     ) -> str:
         """
         Generate Q&A content based on input texts.
@@ -853,9 +852,6 @@ class ContentGenerator:
             input_texts (str): Input texts to generate content from.
             image_file_paths (List[str]): List of image file paths.
             output_filepath (Optional[str]): Filepath to save the response content.
-            is_local (bool): Whether to use a local LLM or not.
-            model_name (str): Model name to use for generation.
-            api_key_label (str): Environment variable name for API key.
             longform (bool): Whether to generate long-form content. Defaults to False.
 
         Returns:
@@ -900,10 +896,6 @@ class ContentGenerator:
                 self.content_generator_config
             )
             
-            # Process timeline markers and store for later use
-            self.response, self.timeline_ratios = self._process_timeline_markers(self.response)
-            self.article_headlines = article_headlines
-                
             logger.info(f"Content generated successfully")
 
             # Save output if requested
@@ -919,159 +911,112 @@ class ContentGenerator:
             logger.error(f"Error generating content: {str(e)}")
             raise
     
-    def _process_timeline_markers(self, text: str) -> Tuple[str, Dict[int, float]]:
-        """
-        Extracts article start markers, calculates their relative positions, and removes them.
-        Returns cleaned text and a dictionary mapping article number to start position ratio (0.0-1.0).
-        """
-        import re
-        
-        # Pattern for ((Article Start: N))
-        pattern = r'\(\(Article Start: (\d+)\)\)'
-        
-        # Find all matches with their indices
-        matches = []
-        for match in re.finditer(pattern, text):
-            matches.append({
-                'article_num': int(match.group(1)),
-                'start': match.start(),
-                'end': match.end()
-            })
-            
-        if not matches:
-            return text, {}
-            
-        # Calculate ratios and build cleaned text
-        cleaned_text = ""
-        last_end = 0
-        ratios = {}
-        
-        # We need to calculate positions in the *cleaned* text
-        current_cleaned_len = 0
-        
-        for match in matches:
-            # Add text before this marker
-            segment = text[last_end:match['start']]
-            cleaned_text += segment
-            current_cleaned_len += len(segment)
-            
-            # Record ratio for this article
-            # We store the position in cleaned text
-            ratios[match['article_num']] = current_cleaned_len
-            
-            last_end = match['end']
-            
-        # Add remaining text
-        remaining = text[last_end:]
-        cleaned_text += remaining
-        current_cleaned_len += len(remaining)
-        
-        # Convert positions to ratios
-        final_ratios = {}
-        if current_cleaned_len > 0:
-            for article_num, pos in ratios.items():
-                final_ratios[article_num] = pos / current_cleaned_len
-                
-        return cleaned_text, final_ratios
-
-    def generate_article_timeline(
+    def generate_timeline_from_transcript(
         self, 
+        transcript: str,
         audio_duration_seconds: float,
         output_filepath: str
     ) -> Optional[str]:
         """
-        Generate a timeline file using actual audio duration and stored marker ratios.
+        Generate timeline by analyzing transcript content with LLM.
         
         Args:
-            audio_duration_seconds (float): Actual audio file duration in seconds
+            transcript (str): The full transcript content
+            audio_duration_seconds (float): Actual audio duration in seconds
             output_filepath (str): Path to save the timeline file
             
         Returns:
             Optional[str]: Path to the generated timeline file, or None if failed
         """
         try:
-            if not hasattr(self, 'article_headlines') or not self.article_headlines:
-                logger.info("No article headlines available for timeline generation")
+            # Extract topics from transcript using LLM
+            topics = self._extract_topics_from_transcript(transcript)
+            
+            if not topics:
+                logger.warning("No topics extracted from transcript")
                 return None
             
-            if not hasattr(self, 'timeline_ratios'):
-                self.timeline_ratios = {}
-            
+            # Convert ratios to actual timestamps
             timeline_entries = []
+            for topic in topics:
+                timestamp_seconds = audio_duration_seconds * topic['ratio']
+                timeline_entries.append({
+                    'timestamp': timedelta(seconds=timestamp_seconds),
+                    'title': topic['title'],
+                    'number': topic['number']
+                })
             
-            if self.timeline_ratios:
-                logger.info(f"Generating timeline with {len(self.timeline_ratios)} markers, audio duration: {audio_duration_seconds:.1f}s")
-                
-                for idx, (url, headline) in enumerate(self.article_headlines):
-                    article_num = idx + 1
-                    ratio = self.timeline_ratios.get(article_num)
-                    
-                    if ratio is not None:
-                        timestamp_seconds = audio_duration_seconds * ratio
-                        timeline_entries.append({
-                            'timestamp': timedelta(seconds=timestamp_seconds),
-                            'headline': headline,
-                            'url': url,
-                            'article_number': article_num
-                        })
-                    else:
-                        logger.warning(f"No marker found for article {article_num}")
-            
-            # Fallback to even distribution if no markers
-            if not timeline_entries:
-                logger.info("No timeline markers found, using even distribution")
-                num_articles = len(self.article_headlines)
-                time_per_article = audio_duration_seconds / num_articles if num_articles > 0 else 0
-                
-                for idx, (url, headline) in enumerate(self.article_headlines):
-                    timeline_entries.append({
-                        'timestamp': timedelta(seconds=idx * time_per_article),
-                        'headline': headline,
-                        'url': url,
-                        'article_number': idx + 1
-                    })
-            
-            # Save timeline file
-            timeline_content = self._format_article_timeline(timeline_entries)
+            # Format and save
+            timeline_content = self._format_timeline(timeline_entries)
             with open(output_filepath, "w", encoding="utf-8") as file:
                 file.write(timeline_content)
             
-            logger.info(f"Article timeline saved to {output_filepath}")
+            logger.info(f"Timeline saved to {output_filepath}")
+            print(f"Timeline saved to {output_filepath}")
             return output_filepath
             
         except Exception as e:
-            logger.error(f"Error generating article timeline: {str(e)}")
+            logger.error(f"Error generating timeline: {str(e)}")
             return None
     
-    def _format_article_timeline(self, entries: List[Dict[str, Any]]) -> str:
+    def _extract_topics_from_transcript(self, transcript: str) -> List[Dict[str, Any]]:
         """
-        Format article timeline entries into a readable string.
+        Use LLM to extract main topics and their positions from transcript.
+        """
+        import json
         
-        Args:
-            entries (List[Dict]): List of timeline entries with timestamp, headline, url
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a transcript analyzer. Extract the main topics/sections from the podcast transcript.
+
+For each topic, estimate its starting position as a ratio (0.0 to 1.0) based on where it appears in the text.
+- 0.0 = very beginning
+- 0.5 = middle  
+- 1.0 = very end
+
+Return ONLY valid JSON array, no other text:
+[
+  {"number": 1, "title": "토픽 제목", "ratio": 0.0},
+  {"number": 2, "title": "토픽 제목", "ratio": 0.15},
+  ...
+]
+
+Rules:
+- Extract 5-8 main topics
+- Title should be concise (under 50 chars)
+- First topic ratio should be 0.0
+- Ratios must be in ascending order
+- Use the same language as the transcript"""),
+            ("human", "{transcript}")
+        ])
+        
+        try:
+            chain = prompt | self.llm | StrOutputParser()
+            response = chain.invoke({"transcript": transcript[:15000]})  # Limit input size
             
-        Returns:
-            str: Formatted timeline content
-        """
-        lines = ["기사별 헤드라인 타임라인\n", "=" * 50 + "\n\n"]
+            # Parse JSON response
+            response = response.strip()
+            if response.startswith("```"):
+                response = re.sub(r'^```\w*\n?', '', response)
+                response = re.sub(r'\n?```$', '', response)
+            
+            topics = json.loads(response)
+            logger.info(f"Extracted {len(topics)} topics from transcript")
+            return topics
+            
+        except Exception as e:
+            logger.error(f"Error extracting topics: {str(e)}")
+            return []
+    
+    def _format_timeline(self, entries: List[Dict[str, Any]]) -> str:
+        """Format timeline entries into readable text."""
+        lines = ["타임라인\n", "=" * 40 + "\n\n"]
         
         for entry in entries:
             timestamp = entry['timestamp']
-            headline = entry['headline']
-            url = entry.get('url', '')
-            article_num = entry.get('article_number', 0)
-            
-            # Format timestamp as MM:SS
             total_seconds = int(timestamp.total_seconds())
             minutes = total_seconds // 60
             seconds = total_seconds % 60
-            timestamp_str = f"{minutes:02d}:{seconds:02d}"
             
-            # Format entry
-            lines.append(f"[기사 {article_num}] {timestamp_str}\n")
-            lines.append(f"{headline}\n")
-            if url:
-                lines.append(f"URL: {url}\n")
-            lines.append("\n")
+            lines.append(f"[{minutes:02d}:{seconds:02d}] {entry['title']}\n\n")
         
         return "".join(lines)
