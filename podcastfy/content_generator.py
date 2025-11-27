@@ -814,9 +814,12 @@ class ContentGenerator:
         )
         user_instructions = self.config_conversation.get("user_instructions", "")
 
+        # Add timeline marker instruction
+        marker_instruction = " IMPORTANT: When transitioning to a new article, insert the marker ((Article Start: N)) where N is the article number (e.g., ((Article Start: 1))). Ensure this marker appears exactly before the discussion of that article begins."
+
         user_instructions = (
             "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
-            + user_instructions
+            + user_instructions + marker_instruction
             + "]]"
         )
 
@@ -896,6 +899,9 @@ class ContentGenerator:
                 self.response,
                 self.content_generator_config
             )
+            
+            # Process timeline markers
+            self.response, timeline_ratios = self._process_timeline_markers(self.response)
                 
             logger.info(f"Content generated successfully")
 
@@ -911,7 +917,8 @@ class ContentGenerator:
                     article_timeline_filepath = self._generate_article_timeline(
                         self.response, 
                         output_filepath,
-                        article_headlines
+                        article_headlines,
+                        timeline_ratios
                     )
                     if article_timeline_filepath:
                         logger.info(f"Article timeline file saved to {article_timeline_filepath}")
@@ -923,11 +930,67 @@ class ContentGenerator:
             logger.error(f"Error generating content: {str(e)}")
             raise
     
+    def _process_timeline_markers(self, text: str) -> Tuple[str, Dict[int, float]]:
+        """
+        Extracts article start markers, calculates their relative positions, and removes them.
+        Returns cleaned text and a dictionary mapping article number to start position ratio (0.0-1.0).
+        """
+        import re
+        
+        # Pattern for ((Article Start: N))
+        pattern = r'\(\(Article Start: (\d+)\)\)'
+        
+        # Find all matches with their indices
+        matches = []
+        for match in re.finditer(pattern, text):
+            matches.append({
+                'article_num': int(match.group(1)),
+                'start': match.start(),
+                'end': match.end()
+            })
+            
+        if not matches:
+            return text, {}
+            
+        # Calculate ratios and build cleaned text
+        cleaned_text = ""
+        last_end = 0
+        ratios = {}
+        
+        # We need to calculate positions in the *cleaned* text
+        current_cleaned_len = 0
+        
+        for match in matches:
+            # Add text before this marker
+            segment = text[last_end:match['start']]
+            cleaned_text += segment
+            current_cleaned_len += len(segment)
+            
+            # Record ratio for this article
+            # We store the position in cleaned text
+            ratios[match['article_num']] = current_cleaned_len
+            
+            last_end = match['end']
+            
+        # Add remaining text
+        remaining = text[last_end:]
+        cleaned_text += remaining
+        current_cleaned_len += len(remaining)
+        
+        # Convert positions to ratios
+        final_ratios = {}
+        if current_cleaned_len > 0:
+            for article_num, pos in ratios.items():
+                final_ratios[article_num] = pos / current_cleaned_len
+                
+        return cleaned_text, final_ratios
+
     def _generate_article_timeline(
         self, 
         transcript: str, 
         transcript_filepath: str,
-        article_headlines: List[Tuple[str, str]]
+        article_headlines: List[Tuple[str, str]],
+        timeline_ratios: Optional[Dict[int, float]] = None
     ) -> Optional[str]:
         """
         Generate a timeline file with article headlines and their estimated start times.
@@ -936,6 +999,7 @@ class ContentGenerator:
             transcript (str): The transcript content with Person1/Person2 tags
             transcript_filepath (str): Path to the transcript file
             article_headlines (List[Tuple[str, str]]): List of (url, headline) tuples
+            timeline_ratios (Optional[Dict[int, float]]): Dictionary mapping article number to start position ratio
             
         Returns:
             Optional[str]: Path to the generated article timeline file, or None if failed
@@ -956,29 +1020,49 @@ class ContentGenerator:
             chars_per_minute = 250
             total_duration_seconds = (total_chars / chars_per_minute) * 60
             
-            # Estimate article start times based on content distribution
-            # We'll distribute articles evenly across the transcript
-            # In a more sophisticated version, we could try to match article content
-            # to specific parts of the transcript
-            
             timeline_entries = []
-            current_time = timedelta(seconds=0)
             
-            # Calculate approximate time per article
-            num_articles = len(article_headlines)
-            time_per_article = total_duration_seconds / num_articles if num_articles > 0 else 0
-            
-            for idx, (url, headline) in enumerate(article_headlines):
-                # Add timeline entry for this article
-                timeline_entries.append({
-                    'timestamp': current_time,
-                    'headline': headline,
-                    'url': url,
-                    'article_number': idx + 1
-                })
+            if timeline_ratios:
+                # Use actual detected positions
+                logger.info(f"Using {len(timeline_ratios)} detected markers for timeline generation")
                 
-                # Move time forward for next article
-                current_time += timedelta(seconds=time_per_article)
+                for idx, (url, headline) in enumerate(article_headlines):
+                    article_num = idx + 1
+                    ratio = timeline_ratios.get(article_num)
+                    
+                    if ratio is not None:
+                        timestamp_seconds = total_duration_seconds * ratio
+                        current_time = timedelta(seconds=timestamp_seconds)
+                        
+                        timeline_entries.append({
+                            'timestamp': current_time,
+                            'headline': headline,
+                            'url': url,
+                            'article_number': article_num
+                        })
+                    else:
+                        logger.warning(f"No marker found for article {article_num}")
+                        # Fallback logic could go here, but for now we skip or let previous fill
+                        # If we skip, the timeline might be incomplete. 
+                        # Better to estimate based on previous end?
+                        pass
+            
+            if not timeline_entries:
+                # Fallback to even distribution if no markers found or markers failed
+                logger.info("No timeline markers found, falling back to even distribution")
+                
+                current_time = timedelta(seconds=0)
+                num_articles = len(article_headlines)
+                time_per_article = total_duration_seconds / num_articles if num_articles > 0 else 0
+                
+                for idx, (url, headline) in enumerate(article_headlines):
+                    timeline_entries.append({
+                        'timestamp': current_time,
+                        'headline': headline,
+                        'url': url,
+                        'article_number': idx + 1
+                    })
+                    current_time += timedelta(seconds=time_per_article)
             
             # Generate timeline file content
             timeline_content = self._format_article_timeline(timeline_entries)

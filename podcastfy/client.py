@@ -96,9 +96,9 @@ def process_content(
             if urls:
                 logger.info(f"Processing {len(urls)} links")
                 contents_list = []
-                for link in urls:
+                for i, link in enumerate(urls):
                     content, headline = content_extractor.extract_content_with_headline(link)
-                    contents_list.append(content)
+                    contents_list.append(f"Article {i+1} Headline: {headline}\n{content}")
                     if headline:
                         article_headlines.append((link, headline))
                         logger.info(f"Extracted headline for {link}: {headline[:50]}...")

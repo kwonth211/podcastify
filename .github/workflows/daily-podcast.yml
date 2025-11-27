@@ -8,9 +8,9 @@ on:
     - cron: "0 22 * * *" # 매일 UTC 22시 (한국시간 오전 7시)
 
   # feat/podcast-workflow 브랜치가 push될 때 실행
-  # push:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - test
 
   # 수동 실행도 가능
   workflow_dispatch:
