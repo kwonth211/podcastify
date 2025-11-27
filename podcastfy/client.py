@@ -164,7 +164,7 @@ def process_content(
             if urls and hasattr(content_generator, 'timeline_ratios'):
                 audio = AudioSegment.from_file(audio_file)
                 audio_duration_seconds = len(audio) / 1000.0
-                timeline_filepath = transcript_filepath.replace('.txt', '_articles_timeline.txt')
+                timeline_filepath = transcript_filepath.replace('transcript_', 'timeline_')
                 content_generator.generate_article_timeline(audio_duration_seconds, timeline_filepath)
             
             return audio_file
