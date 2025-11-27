@@ -91,11 +91,21 @@ def process_content(
             )
 
             combined_content = ""
+            article_headlines = []  # Store headlines for each article
             
             if urls:
                 logger.info(f"Processing {len(urls)} links")
-                contents = [content_extractor.extract_content(link) for link in urls]
-                combined_content += "\n\n".join(contents)
+                contents_list = []
+                for link in urls:
+                    content, headline = content_extractor.extract_content_with_headline(link)
+                    contents_list.append(content)
+                    if headline:
+                        article_headlines.append((link, headline))
+                        logger.info(f"Extracted headline for {link}: {headline[:50]}...")
+                    else:
+                        # Use URL as fallback headline
+                        article_headlines.append((link, link))
+                combined_content = "\n\n".join(contents_list)
 
             if text:
                 if longform and len(text.strip()) < 100:
@@ -123,7 +133,8 @@ def process_content(
                 combined_content,
                 image_file_paths=image_paths or [],
                 output_filepath=transcript_filepath,
-                longform=longform
+                longform=longform,
+                article_headlines=article_headlines if urls else []
             )
 
         if generate_audio:

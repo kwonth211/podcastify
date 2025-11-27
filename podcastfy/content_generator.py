@@ -7,8 +7,9 @@ provides methods to generate and save the generated content.
 """
 
 import os
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import re
+from datetime import timedelta
 
 
 from langchain_community.chat_models import ChatLiteLLM
@@ -839,7 +840,8 @@ class ContentGenerator:
         input_texts: str = "",
         image_file_paths: List[str] = [],
         output_filepath: Optional[str] = None,
-        longform: bool = False
+        longform: bool = False,
+        article_headlines: List[Tuple[str, str]] = []
     ) -> str:
         """
         Generate Q&A content based on input texts.
@@ -899,13 +901,128 @@ class ContentGenerator:
 
             # Save output if requested
             if output_filepath:
-                with open(output_filepath, "w") as file:
+                with open(output_filepath, "w", encoding="utf-8") as file:
                     file.write(self.response)
                 logger.info(f"Response content saved to {output_filepath}")
                 print(f"Transcript saved to {output_filepath}")
+                
+                # Generate article headline timeline if headlines are provided
+                if article_headlines:
+                    article_timeline_filepath = self._generate_article_timeline(
+                        self.response, 
+                        output_filepath,
+                        article_headlines
+                    )
+                    if article_timeline_filepath:
+                        logger.info(f"Article timeline file saved to {article_timeline_filepath}")
+                        print(f"Article timeline saved to {article_timeline_filepath}")
 
             return self.response
             
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
             raise
+    
+    def _generate_article_timeline(
+        self, 
+        transcript: str, 
+        transcript_filepath: str,
+        article_headlines: List[Tuple[str, str]]
+    ) -> Optional[str]:
+        """
+        Generate a timeline file with article headlines and their estimated start times.
+        
+        Args:
+            transcript (str): The transcript content with Person1/Person2 tags
+            transcript_filepath (str): Path to the transcript file
+            article_headlines (List[Tuple[str, str]]): List of (url, headline) tuples
+            
+        Returns:
+            Optional[str]: Path to the generated article timeline file, or None if failed
+        """
+        try:
+            if not article_headlines:
+                logger.warning("No article headlines provided for timeline generation")
+                return None
+            
+            # Calculate total transcript length
+            total_chars = len(transcript)
+            
+            if total_chars == 0:
+                logger.warning("Empty transcript for article timeline generation")
+                return None
+            
+            # Average speaking rate: ~250 characters per minute for Korean
+            chars_per_minute = 250
+            total_duration_seconds = (total_chars / chars_per_minute) * 60
+            
+            # Estimate article start times based on content distribution
+            # We'll distribute articles evenly across the transcript
+            # In a more sophisticated version, we could try to match article content
+            # to specific parts of the transcript
+            
+            timeline_entries = []
+            current_time = timedelta(seconds=0)
+            
+            # Calculate approximate time per article
+            num_articles = len(article_headlines)
+            time_per_article = total_duration_seconds / num_articles if num_articles > 0 else 0
+            
+            for idx, (url, headline) in enumerate(article_headlines):
+                # Add timeline entry for this article
+                timeline_entries.append({
+                    'timestamp': current_time,
+                    'headline': headline,
+                    'url': url,
+                    'article_number': idx + 1
+                })
+                
+                # Move time forward for next article
+                current_time += timedelta(seconds=time_per_article)
+            
+            # Generate timeline file content
+            timeline_content = self._format_article_timeline(timeline_entries)
+            
+            # Save timeline file
+            timeline_filepath = transcript_filepath.replace('.txt', '_articles_timeline.txt')
+            with open(timeline_filepath, "w", encoding="utf-8") as file:
+                file.write(timeline_content)
+            
+            return timeline_filepath
+            
+        except Exception as e:
+            logger.error(f"Error generating article timeline file: {str(e)}")
+            return None
+    
+    def _format_article_timeline(self, entries: List[Dict[str, Any]]) -> str:
+        """
+        Format article timeline entries into a readable string.
+        
+        Args:
+            entries (List[Dict]): List of timeline entries with timestamp, headline, url
+            
+        Returns:
+            str: Formatted timeline content
+        """
+        lines = ["기사별 헤드라인 타임라인\n", "=" * 50 + "\n\n"]
+        
+        for entry in entries:
+            timestamp = entry['timestamp']
+            headline = entry['headline']
+            url = entry.get('url', '')
+            article_num = entry.get('article_number', 0)
+            
+            # Format timestamp as MM:SS
+            total_seconds = int(timestamp.total_seconds())
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            timestamp_str = f"{minutes:02d}:{seconds:02d}"
+            
+            # Format entry
+            lines.append(f"[기사 {article_num}] {timestamp_str}\n")
+            lines.append(f"{headline}\n")
+            if url:
+                lines.append(f"URL: {url}\n")
+            lines.append("\n")
+        
+        return "".join(lines)
