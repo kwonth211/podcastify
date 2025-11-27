@@ -12,7 +12,7 @@ import logging
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from podcastfy.utils.config import load_config
-from typing import List
+from typing import List, Optional
 from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,73 @@ class WebsiteExtractor:
 		except Exception as e:
 			logger.error(f"An unexpected error occurred while extracting content from {url}: {str(e)}")
 			raise Exception(f"An unexpected error occurred while extracting content from {url}: {str(e)}")
+
+	def extract_headline(self, url: str) -> Optional[str]:
+		"""
+		Extract headline/title from a website.
+
+		Args:
+			url (str): Website URL.
+
+		Returns:
+			Optional[str]: Extracted headline, or None if not found.
+		"""
+		try:
+			# Normalize the URL
+			normalized_url = self.normalize_url(url)
+
+			# Fetch the page HTML using Playwright
+			html_content = self.fetch_with_playwright(normalized_url)
+
+			# Parse the page content with BeautifulSoup
+			soup = BeautifulSoup(html_content, 'html.parser')
+
+			# Try multiple strategies to find the headline
+			# 1. Try <title> tag
+			title_tag = soup.find('title')
+			if title_tag and title_tag.get_text().strip():
+				headline = title_tag.get_text().strip()
+				# Clean up common title suffixes
+				headline = re.sub(r'\s*[-|]\s*.*$', '', headline)  # Remove " - Site Name" patterns
+				if len(headline) > 10:  # Only use if meaningful
+					return headline
+
+			# 2. Try <h1> tag
+			h1_tag = soup.find('h1')
+			if h1_tag and h1_tag.get_text().strip():
+				headline = h1_tag.get_text().strip()
+				if len(headline) > 10:
+					return headline
+
+			# 3. Try meta property="og:title"
+			og_title = soup.find('meta', property='og:title')
+			if og_title and og_title.get('content'):
+				headline = og_title.get('content').strip()
+				if len(headline) > 10:
+					return headline
+
+			# 4. Try meta name="title"
+			meta_title = soup.find('meta', attrs={'name': 'title'})
+			if meta_title and meta_title.get('content'):
+				headline = meta_title.get('content').strip()
+				if len(headline) > 10:
+					return headline
+
+			# 5. Try article header or main heading
+			article_header = soup.find('article')
+			if article_header:
+				header_h1 = article_header.find('h1')
+				if header_h1 and header_h1.get_text().strip():
+					headline = header_h1.get_text().strip()
+					if len(headline) > 10:
+						return headline
+
+			logger.warning(f"Could not extract headline from {url}")
+			return None
+
+		except Exception as e:
+			logger.error(f"Error extracting headline from {url}: {str(e)}")
+			return None
 
 	def fetch_with_playwright(self, url: str) -> str:
 		"""

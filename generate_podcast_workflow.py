@@ -8,7 +8,7 @@ import sys
 import glob
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import pytz
 import boto3
 from botocore.config import Config
@@ -145,6 +145,56 @@ def find_latest_file(pattern: str) -> Optional[str]:
     return max(files, key=os.path.getmtime)
 
 
+def extract_date_str(timestamp: str) -> Optional[str]:
+    """Extract date string (YYYYMMDD) from timestamp."""
+    if '-' in timestamp:
+        return timestamp.replace('-', '')[:8]
+    import re
+    date_match = re.search(r'(\d{8})', timestamp)
+    return date_match.group(1) if date_match else None
+
+
+def find_transcript_files(date_str: Optional[str] = None) -> Tuple[Optional[str], List[str]]:
+    """
+    Find transcript and timeline files.
+    
+    Args:
+        date_str: Date string (YYYYMMDD) to match files, or None to get latest
+        
+    Returns:
+        Tuple of (main_transcript_file, list_of_timeline_files)
+    """
+    transcript_files = glob.glob("data/transcripts/transcript_*.txt")
+    if not transcript_files:
+        return None, []
+    
+    # Filter by date if provided
+    if date_str:
+        transcript_files = [f for f in transcript_files if date_str in f]
+    
+    # Separate main transcript and timeline files
+    main_transcript = None
+    timeline_files = []
+    
+    for f in transcript_files:
+        if f.endswith('_timeline.txt') or f.endswith('_articles_timeline.txt'):
+            timeline_files.append(f)
+        elif not main_transcript:
+            main_transcript = f
+    
+    # If no date match or no main transcript found, get the most recent
+    if not main_transcript:
+        main_transcripts = [f for f in glob.glob("data/transcripts/transcript_*.txt")
+                          if not f.endswith('_timeline.txt') and not f.endswith('_articles_timeline.txt')]
+        if main_transcripts:
+            main_transcript = max(main_transcripts, key=os.path.getmtime)
+    
+    # Sort timeline files by modification time (most recent first)
+    timeline_files.sort(key=os.path.getmtime, reverse=True)
+    
+    return main_transcript, timeline_files
+
+
 def write_github_output(key: str, value: str):
     """Write to GitHub Actions output file."""
     github_output = os.environ.get('GITHUB_OUTPUT')
@@ -221,10 +271,21 @@ def main():
         else:
             print("⚠️  R2 upload failed or skipped, but continuing...")
         
-        # Upload transcript to R2
-        transcript_file = find_latest_file("data/transcripts/*.txt")
-        if transcript_file:
-            upload_to_r2(transcript_file, timestamp=timestamp)
+        # Upload transcript and timeline files to R2
+        date_str = extract_date_str(timestamp)
+        main_transcript, timeline_files = find_transcript_files(date_str)
+        
+        # Upload main transcript file
+        if main_transcript:
+            print(f"📄 Uploading transcript: {main_transcript}")
+            upload_to_r2(main_transcript, timestamp=timestamp)
+        else:
+            print("⚠️  No main transcript file found to upload")
+        
+        # Upload timeline files
+        for f in timeline_files:
+            print(f"📊 Uploading timeline: {f}")
+            upload_to_r2(f, timestamp=timestamp)
         
         sys.exit(0)
         

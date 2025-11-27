@@ -8,7 +8,7 @@ extraction, delegating to specialized extractors based on the source type.
 
 import logging
 import re
-from typing import List, Union
+from typing import List, Union, Optional, Tuple
 from urllib.parse import urlparse
 from .youtube_transcriber import YouTubeTranscriber
 from .website_extractor import WebsiteExtractor
@@ -73,6 +73,33 @@ class ContentExtractor:
 				raise ValueError("Unsupported source type")
 		except Exception as e:
 			logger.error(f"Error extracting content from {source}: {str(e)}")
+			raise
+
+	def extract_content_with_headline(self, source: str) -> Tuple[str, Optional[str]]:
+		"""
+		Extract content and headline from various sources.
+
+		Args:
+			source (str): URL or file path of the content source.
+
+		Returns:
+			Tuple[str, Optional[str]]: A tuple of (extracted text content, headline).
+				Headline is None for PDFs or if extraction fails.
+
+		Raises:
+			ValueError: If the source type is unsupported.
+		"""
+		try:
+			content = self.extract_content(source)
+			headline = None
+			
+			if self.is_url(source) and not any(pattern in source for pattern in self.content_extractor_config['youtube_url_patterns']):
+				# Try to extract headline for website URLs
+				headline = self.website_extractor.extract_headline(source)
+			
+			return (content, headline)
+		except Exception as e:
+			logger.error(f"Error extracting content with headline from {source}: {str(e)}")
 			raise
 	
 	def generate_topic_content(self, topic: str) -> str:
