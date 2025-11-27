@@ -900,8 +900,9 @@ class ContentGenerator:
                 self.content_generator_config
             )
             
-            # Process timeline markers
-            self.response, timeline_ratios = self._process_timeline_markers(self.response)
+            # Process timeline markers and store for later use
+            self.response, self.timeline_ratios = self._process_timeline_markers(self.response)
+            self.article_headlines = article_headlines
                 
             logger.info(f"Content generated successfully")
 
@@ -911,18 +912,6 @@ class ContentGenerator:
                     file.write(self.response)
                 logger.info(f"Response content saved to {output_filepath}")
                 print(f"Transcript saved to {output_filepath}")
-                
-                # Generate article headline timeline if headlines are provided
-                if article_headlines:
-                    article_timeline_filepath = self._generate_article_timeline(
-                        self.response, 
-                        output_filepath,
-                        article_headlines,
-                        timeline_ratios
-                    )
-                    if article_timeline_filepath:
-                        logger.info(f"Article timeline file saved to {article_timeline_filepath}")
-                        print(f"Article timeline saved to {article_timeline_filepath}")
 
             return self.response
             
@@ -985,97 +974,73 @@ class ContentGenerator:
                 
         return cleaned_text, final_ratios
 
-    def _generate_article_timeline(
+    def generate_article_timeline(
         self, 
-        transcript: str, 
-        transcript_filepath: str,
-        article_headlines: List[Tuple[str, str]],
-        timeline_ratios: Optional[Dict[int, float]] = None
+        audio_duration_seconds: float,
+        output_filepath: str
     ) -> Optional[str]:
         """
-        Generate a timeline file with article headlines and their estimated start times.
+        Generate a timeline file using actual audio duration and stored marker ratios.
         
         Args:
-            transcript (str): The transcript content with Person1/Person2 tags
-            transcript_filepath (str): Path to the transcript file
-            article_headlines (List[Tuple[str, str]]): List of (url, headline) tuples
-            timeline_ratios (Optional[Dict[int, float]]): Dictionary mapping article number to start position ratio
+            audio_duration_seconds (float): Actual audio file duration in seconds
+            output_filepath (str): Path to save the timeline file
             
         Returns:
-            Optional[str]: Path to the generated article timeline file, or None if failed
+            Optional[str]: Path to the generated timeline file, or None if failed
         """
         try:
-            if not article_headlines:
-                logger.warning("No article headlines provided for timeline generation")
+            if not hasattr(self, 'article_headlines') or not self.article_headlines:
+                logger.info("No article headlines available for timeline generation")
                 return None
             
-            # Calculate total transcript length
-            total_chars = len(transcript)
-            
-            if total_chars == 0:
-                logger.warning("Empty transcript for article timeline generation")
-                return None
-            
-            # Average speaking rate: ~250 characters per minute for Korean
-            chars_per_minute = 250
-            total_duration_seconds = (total_chars / chars_per_minute) * 60
+            if not hasattr(self, 'timeline_ratios'):
+                self.timeline_ratios = {}
             
             timeline_entries = []
             
-            if timeline_ratios:
-                # Use actual detected positions
-                logger.info(f"Using {len(timeline_ratios)} detected markers for timeline generation")
+            if self.timeline_ratios:
+                logger.info(f"Generating timeline with {len(self.timeline_ratios)} markers, audio duration: {audio_duration_seconds:.1f}s")
                 
-                for idx, (url, headline) in enumerate(article_headlines):
+                for idx, (url, headline) in enumerate(self.article_headlines):
                     article_num = idx + 1
-                    ratio = timeline_ratios.get(article_num)
+                    ratio = self.timeline_ratios.get(article_num)
                     
                     if ratio is not None:
-                        timestamp_seconds = total_duration_seconds * ratio
-                        current_time = timedelta(seconds=timestamp_seconds)
-                        
+                        timestamp_seconds = audio_duration_seconds * ratio
                         timeline_entries.append({
-                            'timestamp': current_time,
+                            'timestamp': timedelta(seconds=timestamp_seconds),
                             'headline': headline,
                             'url': url,
                             'article_number': article_num
                         })
                     else:
                         logger.warning(f"No marker found for article {article_num}")
-                        # Fallback logic could go here, but for now we skip or let previous fill
-                        # If we skip, the timeline might be incomplete. 
-                        # Better to estimate based on previous end?
-                        pass
             
+            # Fallback to even distribution if no markers
             if not timeline_entries:
-                # Fallback to even distribution if no markers found or markers failed
-                logger.info("No timeline markers found, falling back to even distribution")
+                logger.info("No timeline markers found, using even distribution")
+                num_articles = len(self.article_headlines)
+                time_per_article = audio_duration_seconds / num_articles if num_articles > 0 else 0
                 
-                current_time = timedelta(seconds=0)
-                num_articles = len(article_headlines)
-                time_per_article = total_duration_seconds / num_articles if num_articles > 0 else 0
-                
-                for idx, (url, headline) in enumerate(article_headlines):
+                for idx, (url, headline) in enumerate(self.article_headlines):
                     timeline_entries.append({
-                        'timestamp': current_time,
+                        'timestamp': timedelta(seconds=idx * time_per_article),
                         'headline': headline,
                         'url': url,
                         'article_number': idx + 1
                     })
-                    current_time += timedelta(seconds=time_per_article)
-            
-            # Generate timeline file content
-            timeline_content = self._format_article_timeline(timeline_entries)
             
             # Save timeline file
-            timeline_filepath = transcript_filepath.replace('.txt', '_articles_timeline.txt')
-            with open(timeline_filepath, "w", encoding="utf-8") as file:
+            timeline_content = self._format_article_timeline(timeline_entries)
+            with open(output_filepath, "w", encoding="utf-8") as file:
                 file.write(timeline_content)
             
-            return timeline_filepath
+            logger.info(f"Article timeline saved to {output_filepath}")
+            return output_filepath
             
         except Exception as e:
-            logger.error(f"Error generating article timeline file: {str(e)}")
+            logger.error(f"Error generating article timeline: {str(e)}")
             return None
     
     def _format_article_timeline(self, entries: List[Dict[str, Any]]) -> str:

@@ -12,6 +12,7 @@ import typer
 import yaml
 from datetime import datetime
 import pytz
+from pydub import AudioSegment
 from podcastfy.content_parser.content_extractor import ContentExtractor
 from podcastfy.content_generator import ContentGenerator
 from podcastfy.text_to_speech import TextToSpeech
@@ -158,6 +159,14 @@ def process_content(
             )
             text_to_speech.convert_to_speech(qa_content, audio_file)
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
+            
+            # Generate timeline using actual audio duration
+            if urls and hasattr(content_generator, 'timeline_ratios'):
+                audio = AudioSegment.from_file(audio_file)
+                audio_duration_seconds = len(audio) / 1000.0
+                timeline_filepath = transcript_filepath.replace('.txt', '_articles_timeline.txt')
+                content_generator.generate_article_timeline(audio_duration_seconds, timeline_filepath)
+            
             return audio_file
         else:
             logger.info(f"Transcript generated successfully: {transcript_filepath}")
