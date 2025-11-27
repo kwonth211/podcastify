@@ -11,6 +11,7 @@ import uuid
 import typer
 import yaml
 from datetime import datetime
+import pytz
 from podcastfy.content_parser.content_extractor import ContentExtractor
 from podcastfy.content_generator import ContentGenerator
 from podcastfy.text_to_speech import TextToSpeech
@@ -109,7 +110,10 @@ def process_content(
                 combined_content += f"\n\n{topic_content}"
 
             # Generate Q&A content using output directory from conversation config
-            date_str = datetime.now().strftime("%Y%m%d")
+            # Use KST (Korea Standard Time) for date string
+            kst = pytz.timezone('Asia/Seoul')
+            kst_time = datetime.now(kst)
+            date_str = kst_time.strftime("%Y%m%d")
             transcript_filename = f"transcript_{date_str}.txt"
             transcript_filepath = os.path.join(
                 output_directories.get("transcripts", "data/transcripts"),
@@ -133,7 +137,10 @@ def process_content(
                 conversation_config=conv_config.to_dict(),
             )
 
-            date_str = datetime.now().strftime("%Y%m%d")
+            # Use KST (Korea Standard Time) for date string
+            kst = pytz.timezone('Asia/Seoul')
+            kst_time = datetime.now(kst)
+            date_str = kst_time.strftime("%Y%m%d")
             audio_filename = f"podcast_{date_str}.mp3"
             audio_file = os.path.join(
                 output_directories.get("audio", "data/audio"), audio_filename
