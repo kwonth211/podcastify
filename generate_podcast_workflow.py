@@ -139,10 +139,11 @@ def upload_to_r2(
 
 def find_latest_file(pattern: str) -> Optional[str]:
     """Find the most recently created file matching the pattern."""
-    files = glob.glob(pattern)
-    if not files:
-        return None
-    return max(files, key=os.path.getmtime)
+    # Try both with and without ./ prefix
+    files = glob.glob(pattern) + glob.glob(f"./{pattern}")
+    # Remove duplicates
+    files = list(set(files))
+    return max(files, key=os.path.getmtime) if files else None
 
 
 def extract_date_str(timestamp: str) -> Optional[str]:
@@ -154,7 +155,7 @@ def extract_date_str(timestamp: str) -> Optional[str]:
     return date_match.group(1) if date_match else None
 
 
-def find_transcript_files(date_str: Optional[str] = None) -> Tuple[Optional[str], List[str]]:
+def find_transcript_files(date_str: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Find transcript and timeline files.
     
@@ -162,37 +163,23 @@ def find_transcript_files(date_str: Optional[str] = None) -> Tuple[Optional[str]
         date_str: Date string (YYYYMMDD) to match files, or None to get latest
         
     Returns:
-        Tuple of (main_transcript_file, list_of_timeline_files)
+        Tuple of (transcript_file, timeline_file)
     """
-    transcript_files = glob.glob("data/transcripts/transcript_*.txt")
-    if not transcript_files:
-        return None, []
+    transcript_pattern = "data/transcripts/transcript_*.txt"
+    timeline_pattern = "data/transcripts/timeline_*.txt"
+    
+    transcript_files = glob.glob(transcript_pattern)
+    timeline_files = glob.glob(timeline_pattern)
     
     # Filter by date if provided
     if date_str:
         transcript_files = [f for f in transcript_files if date_str in f]
+        timeline_files = [f for f in timeline_files if date_str in f]
     
-    # Separate main transcript and timeline files
-    main_transcript = None
-    timeline_files = []
+    transcript_file = max(transcript_files, key=os.path.getmtime) if transcript_files else None
+    timeline_file = max(timeline_files, key=os.path.getmtime) if timeline_files else None
     
-    for f in transcript_files:
-        if f.endswith('_timeline.txt') or f.endswith('_articles_timeline.txt'):
-            timeline_files.append(f)
-        elif not main_transcript:
-            main_transcript = f
-    
-    # If no date match or no main transcript found, get the most recent
-    if not main_transcript:
-        main_transcripts = [f for f in glob.glob("data/transcripts/transcript_*.txt")
-                          if not f.endswith('_timeline.txt') and not f.endswith('_articles_timeline.txt')]
-        if main_transcripts:
-            main_transcript = max(main_transcripts, key=os.path.getmtime)
-    
-    # Sort timeline files by modification time (most recent first)
-    timeline_files.sort(key=os.path.getmtime, reverse=True)
-    
-    return main_transcript, timeline_files
+    return transcript_file, timeline_file
 
 
 def write_github_output(key: str, value: str):
@@ -272,22 +259,16 @@ def main():
             print("⚠️  R2 upload failed or skipped, but continuing...")
         
         # Upload transcript to R2
-        transcript_file = find_latest_file("data/transcripts/*.txt")
-        if transcript_file and not transcript_file.endswith('_timeline.txt') and not transcript_file.endswith('_articles_timeline.txt'):
+        transcript_file = find_latest_file("data/transcripts/transcript_*.txt")
+        if transcript_file:
             print(f"📄 Uploading transcript: {transcript_file}")
             upload_to_r2(transcript_file, timestamp=timestamp)
         
-        # Upload timeline files to R2
-        timeline_file = find_latest_file("data/transcripts/*_timeline.txt")
+        # Upload timeline file to R2
+        timeline_file = find_latest_file("data/transcripts/timeline_*.txt")
         if timeline_file:
             print(f"📊 Uploading timeline: {timeline_file}")
             upload_to_r2(timeline_file, timestamp=timestamp)
-        
-        # Upload articles timeline file to R2
-        articles_timeline_file = find_latest_file("data/transcripts/*_articles_timeline.txt")
-        if articles_timeline_file:
-            print(f"📊 Uploading articles timeline: {articles_timeline_file}")
-            upload_to_r2(articles_timeline_file, timestamp=timestamp)
         
         sys.exit(0)
         

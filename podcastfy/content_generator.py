@@ -242,7 +242,7 @@ class LongFormContentGenerator:
 
         chunks = self.chunk_content(input_content, chunk_size)
         conversation_parts = []
-        chat_context = input_content
+        chat_context = ""  # Start empty, only accumulate generated conversation
         num_parts = len(chunks)
         print(f"Generating {num_parts} parts")
         
@@ -255,14 +255,8 @@ class LongFormContentGenerator:
             )
             enhanced_params["input_text"] = chunk
             response = self.llm_chain.invoke(enhanced_params)
-            if i == 0:
-                chat_context = response
-            else:
-                chat_context = chat_context + response
+            chat_context += response  # Accumulate only generated responses
             print(f"Generated part {i+1}/{num_parts}: Size {len(chunk)} characters.")
-            #print(f"[LLM-START] Step: {i+1} ##############################")
-            #print(response)
-            #print(f"[LLM-END] Step: {i+1} ##############################")
             conversation_parts.append(response)
 
         return self.stitch_conversations(conversation_parts)
@@ -814,11 +808,14 @@ class ContentGenerator:
         )
         user_instructions = self.config_conversation.get("user_instructions", "")
 
-        user_instructions = (
-            "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
-            + user_instructions
-            + "]]"
-        )
+        if user_instructions:
+            user_instructions = (
+                "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
+                + user_instructions
+                + "]]"
+            )
+        else:
+            user_instructions = ""
 
         new_system_message = (
             prompt_template.messages[0].prompt.template + "\n" + user_instructions
@@ -840,8 +837,7 @@ class ContentGenerator:
         input_texts: str = "",
         image_file_paths: List[str] = [],
         output_filepath: Optional[str] = None,
-        longform: bool = False,
-        article_headlines: List[Tuple[str, str]] = []
+        longform: bool = False
     ) -> str:
         """
         Generate Q&A content based on input texts.
@@ -850,9 +846,6 @@ class ContentGenerator:
             input_texts (str): Input texts to generate content from.
             image_file_paths (List[str]): List of image file paths.
             output_filepath (Optional[str]): Filepath to save the response content.
-            is_local (bool): Whether to use a local LLM or not.
-            model_name (str): Model name to use for generation.
-            api_key_label (str): Environment variable name for API key.
             longform (bool): Whether to generate long-form content. Defaults to False.
 
         Returns:
@@ -896,7 +889,7 @@ class ContentGenerator:
                 self.response,
                 self.content_generator_config
             )
-                
+            
             logger.info(f"Content generated successfully")
 
             # Save output if requested
@@ -905,17 +898,6 @@ class ContentGenerator:
                     file.write(self.response)
                 logger.info(f"Response content saved to {output_filepath}")
                 print(f"Transcript saved to {output_filepath}")
-                
-                # Generate article headline timeline if headlines are provided
-                if article_headlines:
-                    article_timeline_filepath = self._generate_article_timeline(
-                        self.response, 
-                        output_filepath,
-                        article_headlines
-                    )
-                    if article_timeline_filepath:
-                        logger.info(f"Article timeline file saved to {article_timeline_filepath}")
-                        print(f"Article timeline saved to {article_timeline_filepath}")
 
             return self.response
             
@@ -923,106 +905,131 @@ class ContentGenerator:
             logger.error(f"Error generating content: {str(e)}")
             raise
     
-    def _generate_article_timeline(
+    def generate_timeline_from_transcript(
         self, 
-        transcript: str, 
-        transcript_filepath: str,
-        article_headlines: List[Tuple[str, str]]
+        transcript: str,
+        audio_duration_seconds: float,
+        output_filepath: str
     ) -> Optional[str]:
         """
-        Generate a timeline file with article headlines and their estimated start times.
+        Generate timeline by analyzing transcript content with LLM.
         
         Args:
-            transcript (str): The transcript content with Person1/Person2 tags
-            transcript_filepath (str): Path to the transcript file
-            article_headlines (List[Tuple[str, str]]): List of (url, headline) tuples
+            transcript (str): The full transcript content
+            audio_duration_seconds (float): Actual audio duration in seconds
+            output_filepath (str): Path to save the timeline file
             
         Returns:
-            Optional[str]: Path to the generated article timeline file, or None if failed
+            Optional[str]: Path to the generated timeline file, or None if failed
         """
         try:
-            if not article_headlines:
-                logger.warning("No article headlines provided for timeline generation")
+            topics = self._extract_topics_from_transcript(transcript)
+            
+            if not topics:
+                logger.warning("No topics extracted from transcript")
                 return None
-            
-            # Calculate total transcript length
-            total_chars = len(transcript)
-            
-            if total_chars == 0:
-                logger.warning("Empty transcript for article timeline generation")
-                return None
-            
-            # Average speaking rate: ~250 characters per minute for Korean
-            chars_per_minute = 250
-            total_duration_seconds = (total_chars / chars_per_minute) * 60
-            
-            # Estimate article start times based on content distribution
-            # We'll distribute articles evenly across the transcript
-            # In a more sophisticated version, we could try to match article content
-            # to specific parts of the transcript
             
             timeline_entries = []
-            current_time = timedelta(seconds=0)
-            
-            # Calculate approximate time per article
-            num_articles = len(article_headlines)
-            time_per_article = total_duration_seconds / num_articles if num_articles > 0 else 0
-            
-            for idx, (url, headline) in enumerate(article_headlines):
-                # Add timeline entry for this article
+            for topic in topics:
+                timestamp_seconds = audio_duration_seconds * topic['ratio']
                 timeline_entries.append({
-                    'timestamp': current_time,
-                    'headline': headline,
-                    'url': url,
-                    'article_number': idx + 1
+                    'timestamp': timedelta(seconds=timestamp_seconds),
+                    'title': topic['title'],
+                    'number': topic['number']
                 })
-                
-                # Move time forward for next article
-                current_time += timedelta(seconds=time_per_article)
             
-            # Generate timeline file content
-            timeline_content = self._format_article_timeline(timeline_entries)
-            
-            # Save timeline file
-            timeline_filepath = transcript_filepath.replace('.txt', '_articles_timeline.txt')
-            with open(timeline_filepath, "w", encoding="utf-8") as file:
+            timeline_content = self._format_timeline(timeline_entries)
+            with open(output_filepath, "w", encoding="utf-8") as file:
                 file.write(timeline_content)
             
-            return timeline_filepath
+            print(f"Timeline saved to {output_filepath}")
+            return output_filepath
             
         except Exception as e:
-            logger.error(f"Error generating article timeline file: {str(e)}")
+            logger.error(f"Error generating timeline: {str(e)}")
             return None
     
-    def _format_article_timeline(self, entries: List[Dict[str, Any]]) -> str:
+    def _extract_topics_from_transcript(self, transcript: str) -> List[Dict[str, Any]]:
         """
-        Format article timeline entries into a readable string.
+        Extract topics from transcript and calculate their actual positions.
+        """
+        import json
         
-        Args:
-            entries (List[Dict]): List of timeline entries with timestamp, headline, url
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a transcript analyzer. Extract the main topics discussed in the podcast.
+
+Return ONLY valid JSON array with topic titles and a unique keyword phrase that appears in the transcript when that topic starts:
+[
+  {{"title": "토픽 제목", "keyword": "해당 토픽이 시작될 때 나오는 특징적인 문구"}},
+  {{"title": "토픽 제목", "keyword": "해당 토픽이 시작될 때 나오는 특징적인 문구"}},
+  ...
+]
+
+Rules:
+- Extract 5-8 main topics in order of appearance
+- Title: concise summary (under 40 chars)
+- Keyword: exact phrase from transcript (5-15 chars) that marks topic start
+- Use the same language as the transcript"""),
+            ("human", "{transcript}")
+        ])
+        
+        try:
+            chain = prompt | self.llm | StrOutputParser()
+            response = chain.invoke({"transcript": transcript[:15000]})
             
-        Returns:
-            str: Formatted timeline content
-        """
-        lines = ["기사별 헤드라인 타임라인\n", "=" * 50 + "\n\n"]
+            response = response.strip()
+            if response.startswith("```"):
+                response = re.sub(r'^```\w*\n?', '', response)
+                response = re.sub(r'\n?```$', '', response)
+            
+            raw_topics = json.loads(response)
+            
+            # Calculate actual positions by finding keywords in transcript
+            total_len = len(transcript)
+            topics = []
+            
+            for i, topic in enumerate(raw_topics):
+                keyword = topic.get('keyword', '')
+                pos = transcript.find(keyword)
+                
+                if pos == -1:
+                    # Keyword not found, estimate based on order
+                    ratio = i / max(len(raw_topics), 1)
+                else:
+                    ratio = pos / total_len
+                
+                topics.append({
+                    'number': i + 1,
+                    'title': topic.get('title', ''),
+                    'ratio': ratio
+                })
+            
+            # Sort by ratio to ensure correct order
+            topics.sort(key=lambda x: x['ratio'])
+            
+            # Renumber after sorting
+            for i, topic in enumerate(topics):
+                topic['number'] = i + 1
+            
+            return topics
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"Error extracting topics: {str(e)}")
+            return []
+    
+    def _format_timeline(self, entries: List[Dict[str, Any]]) -> str:
+        """Format timeline entries into readable text."""
+        lines = ["타임라인\n", "=" * 40 + "\n\n"]
         
         for entry in entries:
             timestamp = entry['timestamp']
-            headline = entry['headline']
-            url = entry.get('url', '')
-            article_num = entry.get('article_number', 0)
-            
-            # Format timestamp as MM:SS
             total_seconds = int(timestamp.total_seconds())
             minutes = total_seconds // 60
             seconds = total_seconds % 60
-            timestamp_str = f"{minutes:02d}:{seconds:02d}"
             
-            # Format entry
-            lines.append(f"[기사 {article_num}] {timestamp_str}\n")
-            lines.append(f"{headline}\n")
-            if url:
-                lines.append(f"URL: {url}\n")
-            lines.append("\n")
+            lines.append(f"[{minutes:02d}:{seconds:02d}] {entry['title']}\n\n")
         
         return "".join(lines)
