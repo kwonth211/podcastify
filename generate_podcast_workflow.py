@@ -139,7 +139,10 @@ def upload_to_r2(
 
 def find_latest_file(pattern: str) -> Optional[str]:
     """Find the most recently created file matching the pattern."""
-    files = glob.glob(pattern)
+    # Try both with and without ./ prefix
+    files = glob.glob(pattern) + glob.glob(f"./{pattern}")
+    # Remove duplicates
+    files = list(set(files))
     return max(files, key=os.path.getmtime) if files else None
 
 

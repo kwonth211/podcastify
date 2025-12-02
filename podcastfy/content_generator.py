@@ -242,7 +242,7 @@ class LongFormContentGenerator:
 
         chunks = self.chunk_content(input_content, chunk_size)
         conversation_parts = []
-        chat_context = input_content
+        chat_context = ""  # Start empty, only accumulate generated conversation
         num_parts = len(chunks)
         print(f"Generating {num_parts} parts")
         
@@ -255,14 +255,8 @@ class LongFormContentGenerator:
             )
             enhanced_params["input_text"] = chunk
             response = self.llm_chain.invoke(enhanced_params)
-            if i == 0:
-                chat_context = response
-            else:
-                chat_context = chat_context + response
+            chat_context += response  # Accumulate only generated responses
             print(f"Generated part {i+1}/{num_parts}: Size {len(chunk)} characters.")
-            #print(f"[LLM-START] Step: {i+1} ##############################")
-            #print(response)
-            #print(f"[LLM-END] Step: {i+1} ##############################")
             conversation_parts.append(response)
 
         return self.stitch_conversations(conversation_parts)
@@ -957,30 +951,24 @@ class ContentGenerator:
     
     def _extract_topics_from_transcript(self, transcript: str) -> List[Dict[str, Any]]:
         """
-        Use LLM to extract main topics and their positions from transcript.
+        Extract topics from transcript and calculate their actual positions.
         """
         import json
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a transcript analyzer. Extract the main topics/sections from the podcast transcript.
+            ("system", """You are a transcript analyzer. Extract the main topics discussed in the podcast.
 
-For each topic, estimate its starting position as a ratio (0.0 to 1.0) based on where it appears in the text.
-- 0.0 = very beginning
-- 0.5 = middle  
-- 1.0 = very end
-
-Return ONLY valid JSON array, no other text:
+Return ONLY valid JSON array with topic titles and a unique keyword phrase that appears in the transcript when that topic starts:
 [
-  {{"number": 1, "title": "토픽 제목", "ratio": 0.0}},
-  {{"number": 2, "title": "토픽 제목", "ratio": 0.15}},
+  {{"title": "토픽 제목", "keyword": "해당 토픽이 시작될 때 나오는 특징적인 문구"}},
+  {{"title": "토픽 제목", "keyword": "해당 토픽이 시작될 때 나오는 특징적인 문구"}},
   ...
 ]
 
 Rules:
-- Extract 5-8 main topics
-- Title should be concise (under 50 chars)
-- First topic ratio should be 0.0
-- Ratios must be in ascending order
+- Extract 5-8 main topics in order of appearance
+- Title: concise summary (under 40 chars)
+- Keyword: exact phrase from transcript (5-15 chars) that marks topic start
 - Use the same language as the transcript"""),
             ("human", "{transcript}")
         ])
@@ -989,13 +977,40 @@ Rules:
             chain = prompt | self.llm | StrOutputParser()
             response = chain.invoke({"transcript": transcript[:15000]})
             
-            # Parse JSON response
             response = response.strip()
             if response.startswith("```"):
                 response = re.sub(r'^```\w*\n?', '', response)
                 response = re.sub(r'\n?```$', '', response)
             
-            topics = json.loads(response)
+            raw_topics = json.loads(response)
+            
+            # Calculate actual positions by finding keywords in transcript
+            total_len = len(transcript)
+            topics = []
+            
+            for i, topic in enumerate(raw_topics):
+                keyword = topic.get('keyword', '')
+                pos = transcript.find(keyword)
+                
+                if pos == -1:
+                    # Keyword not found, estimate based on order
+                    ratio = i / max(len(raw_topics), 1)
+                else:
+                    ratio = pos / total_len
+                
+                topics.append({
+                    'number': i + 1,
+                    'title': topic.get('title', ''),
+                    'ratio': ratio
+                })
+            
+            # Sort by ratio to ensure correct order
+            topics.sort(key=lambda x: x['ratio'])
+            
+            # Renumber after sorting
+            for i, topic in enumerate(topics):
+                topic['number'] = i + 1
+            
             return topics
             
         except json.JSONDecodeError as e:
