@@ -86,6 +86,19 @@ jobs:
             data/transcripts/*.txt
           retention-days: 7
 
+      - name: Post to Twitter
+        if: success()
+        id: twitter
+        env:
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
+          PODCAST_URL: ${{ steps.generate.outputs.r2_url }}
+        run: |
+          pip install tweepy
+          python3 post_to_twitter.py
+
       - name: Create summary
         if: success()
         run: |
@@ -99,6 +112,9 @@ jobs:
           fi
           if [ -n "${{ steps.generate.outputs.r2_url }}" ]; then
             echo "- R2 URL: ${{ steps.generate.outputs.r2_url }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ steps.twitter.outputs.tweet_url }}" ]; then
+            echo "- 🐦 Twitter: ${{ steps.twitter.outputs.tweet_url }}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run ID:** ${{ github.run_number }}-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
