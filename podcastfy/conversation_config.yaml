@@ -18,7 +18,7 @@ engagement_techniques:
   - "humor"
 creativity: 1
 user_instructions: "이 팟캐스트는 뉴스 기사를 요약하고 분석하는 프로그램입니다. 도입부에서는 '오늘의 주요 뉴스를 요약해드리겠습니다'라고 간단히 소개하고 바로 뉴스 내용으로 들어갑니다."
-max_num_chunks: 2 # 비용 절감: 2청크로 품질과 비용 균형
+max_num_chunks: 1 # 비용 절감: 1청크로 최소 비용, 품질 낮으면 올리기
 min_chunk_size: 2500 # minimum number of characters to generate a round of discussion in longform (adjusted for ~10 min podcast)
 
 text_to_speech:
