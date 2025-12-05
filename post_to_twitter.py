@@ -25,8 +25,8 @@ def load_topics_from_timeline(timeline_dir: str = "data/transcripts") -> Optiona
         토픽 리스트 또는 None
     """
     try:
-        # 가장 최근 타임라인 파일 찾기
-        timeline_files = glob.glob(os.path.join(timeline_dir, "timeline_*.txt"))
+        # 가장 최근 타임라인 파일 찾기 (형식: {timestamp}_timeline_{date}.txt)
+        timeline_files = glob.glob(os.path.join(timeline_dir, "*timeline*.txt"))
         if not timeline_files:
             print("⚠️ 타임라인 파일을 찾을 수 없습니다")
             return None
