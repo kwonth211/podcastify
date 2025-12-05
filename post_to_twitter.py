@@ -4,39 +4,88 @@ Twitter(X) 자동 포스팅 스크립트
 데일리 팟캐스트 생성 후 홍보 트윗을 자동으로 올립니다.
 """
 
+import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
 import tweepy
+
+
+def load_headlines(filepath: str = "data/urls/daily_headlines.json") -> Optional[List[str]]:
+    """
+    저장된 헤드라인을 로드합니다.
+    
+    Args:
+        filepath: 헤드라인 JSON 파일 경로
+        
+    Returns:
+        헤드라인 리스트 또는 None
+    """
+    try:
+        if Path(filepath).exists():
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get("headlines", [])
+    except Exception as e:
+        print(f"⚠️ 헤드라인 로드 실패: {e}")
+    return None
 
 
 def create_tweet_message() -> str:
     """
     트윗 메시지를 생성합니다.
+    헤드라인이 있으면 포함시킵니다.
     """
-    today = datetime.now().strftime("%m월 %d일")
+    today = datetime.now().strftime("%-m월 %-d일")
     weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
     weekday = weekday_kr[datetime.now().weekday()]
     
     # 웹사이트 URL (고정)
     website_url = "https://dailynewspod.com"
+    hashtags = "#뉴스팟캐스트 #데일리뉴스"
     
-    # 다양한 메시지 템플릿 (랜덤하게 선택 가능)
-    messages = [
-        f"🎙️ {today}({weekday}) 데일리 뉴스가 도착했습니다!\n\n오늘의 주요 뉴스를 AI 팟캐스트로 들어보세요.",
-        f"☀️ 좋은 아침이에요! {today}({weekday}) 뉴스 팟캐스트가 준비됐습니다.\n\n출근길에 가볍게 들어보세요 🎧",
-        f"📰 {today}({weekday}) 오늘의 뉴스 브리핑!\n\nAI가 정리한 주요 뉴스를 팟캐스트로 만나보세요.",
-    ]
+    # 헤드라인 로드
+    headlines = load_headlines()
     
-    # 날짜 기반으로 메시지 선택 (매일 다른 메시지)
-    message_index = datetime.now().day % len(messages)
-    message = messages[message_index]
-    
-    # 웹사이트 URL 추가
-    message += f"\n\n🔗 {website_url}"
-    
-    # 해시태그 추가
-    message += "\n\n#데일리뉴스 #AI팟캐스트 #뉴스브리핑"
+    if headlines:
+        # 헤드라인이 있으면 포함하는 메시지
+        header = f"🎙️ {today}({weekday}) 뉴스 팟캐스트\n\n"
+        footer = f"\n🔗 {website_url}\n\n{hashtags}"
+        
+        # 사용 가능한 글자수 계산 (280자 - 헤더 - 푸터)
+        available_chars = 280 - len(header) - len(footer) - 10  # 여유분 10자
+        
+        # 헤드라인 추가 (글자수 내에서 최대한)
+        headline_lines = []
+        for headline in headlines[:3]:
+            # 헤드라인이 너무 길면 자르기
+            if len(headline) > 35:
+                headline = headline[:32] + "..."
+            line = f"• {headline}\n"
+            
+            # 글자수 체크
+            if sum(len(l) for l in headline_lines) + len(line) <= available_chars:
+                headline_lines.append(line)
+            else:
+                break
+        
+        message = header + "".join(headline_lines) + footer
+    else:
+        # 헤드라인이 없으면 기본 메시지
+        messages = [
+            f"🎙️ {today}({weekday}) 데일리 뉴스가 도착했습니다!\n\n오늘의 주요 뉴스를 팟캐스트로 들어보세요.",
+            f"☀️ 좋은 아침이에요! {today}({weekday}) 뉴스 팟캐스트가 준비됐습니다.\n\n출근길에 가볍게 들어보세요 🎧",
+            f"📰 {today}({weekday}) 오늘의 뉴스 브리핑!\n\n주요 뉴스를 팟캐스트로 만나보세요.",
+        ]
+        
+        # 날짜 기반으로 메시지 선택 (매일 다른 메시지)
+        message_index = datetime.now().day % len(messages)
+        message = messages[message_index]
+        
+        # 웹사이트 URL 및 해시태그 추가
+        message += f"\n\n🔗 {website_url}\n\n{hashtags}"
     
     return message
 

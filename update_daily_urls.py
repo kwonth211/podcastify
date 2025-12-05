@@ -3,26 +3,28 @@
 Update daily_urls.txt with latest headlines from Naver News Economy section
 Extracts links from elements with class "sa_item _SECTION_HEADLINE"
 """
+import json
 import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 
-def extract_headline_urls(url: str, max_urls: int = 5) -> List[str]:
+def extract_headline_urls(url: str, max_urls: int = 5) -> Tuple[List[str], List[str]]:
     """
-    Extract headline URLs from Naver News section page.
+    Extract headline URLs and titles from Naver News section page.
     
     Args:
         url: The Naver News section URL
         max_urls: Maximum number of URLs to extract (default: 5)
     
     Returns:
-        List of article URLs
+        Tuple of (List of article URLs, List of headline titles)
     """
     urls = []
+    titles = []
     
     try:
         with sync_playwright() as p:
@@ -69,12 +71,15 @@ def extract_headline_urls(url: str, max_urls: int = 5) -> List[str]:
             
             print(f"📰 Found {len(headline_elements)} headline elements")
             
-            # Extract links from each headline element
+            # Extract links and titles from each headline element
             for element in headline_elements[:max_urls]:
                 # Find <a> tag within the element
                 link_tag = element.find('a', href=True)
                 if link_tag:
                     href = link_tag.get('href', '').strip()
+                    # Extract title from the link text or title attribute
+                    title = link_tag.get_text(strip=True) or link_tag.get('title', '')
+                    
                     if href:
                         # Convert relative URLs to absolute
                         if href.startswith('/'):
@@ -89,17 +94,19 @@ def extract_headline_urls(url: str, max_urls: int = 5) -> List[str]:
                         # Only add if it's a valid article URL and not already in list
                         if 'article' in href and href not in urls:
                             urls.append(href)
-                            print(f"  ✓ {href}")
+                            titles.append(title)
+                            print(f"  ✓ {title[:50]}..." if len(title) > 50 else f"  ✓ {title}")
+                            print(f"    {href}")
             
-            print(f"✅ Extracted {len(urls)} article URLs")
+            print(f"✅ Extracted {len(urls)} article URLs with titles")
             
     except Exception as e:
         print(f"❌ Error extracting URLs: {str(e)}")
         import traceback
         traceback.print_exc()
-        return []
+        return [], []
     
-    return urls
+    return urls, titles
 
 
 def update_daily_urls_file(urls: List[str], filepath: str = "data/urls/daily_urls.txt"):
@@ -166,6 +173,32 @@ def update_daily_urls_file(urls: List[str], filepath: str = "data/urls/daily_url
     print(f"✅ Updated {filepath} with {len(urls)} URL(s) (removed existing URLs)")
 
 
+def save_headlines(titles: List[str], filepath: str = "data/urls/daily_headlines.json"):
+    """
+    Save headline titles to a JSON file for use in Twitter posts.
+    
+    Args:
+        titles: List of headline titles
+        filepath: Path to save the headlines
+    """
+    if not titles:
+        print("⚠️  No titles to save. Skipping headlines file.")
+        return
+    
+    file_path = Path(filepath)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    headlines_data = {
+        "headlines": titles,
+        "count": len(titles)
+    }
+    
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(headlines_data, f, ensure_ascii=False, indent=2)
+    
+    print(f"✅ Saved {len(titles)} headlines to {filepath}")
+
+
 def main():
     """Main function."""
     # Naver News Economy section URL
@@ -177,15 +210,16 @@ def main():
     print("📰 Naver News Economy Headline Extractor")
     print("=" * 50)
     
-    # Extract URLs
-    urls = extract_headline_urls(economy_url, max_urls=max_urls)
+    # Extract URLs and titles
+    urls, titles = extract_headline_urls(economy_url, max_urls=max_urls)
     
     if not urls:
         print("❌ No URLs extracted. Exiting.")
         sys.exit(1)
     
-    # Update file
+    # Update files
     update_daily_urls_file(urls)
+    save_headlines(titles)
     
     print("=" * 50)
     print("✅ Done!")
