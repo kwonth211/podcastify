@@ -7,9 +7,9 @@ on:
   schedule:
     - cron: "0 22 * * *" # 매일 UTC 22시 (한국시간 오전 7시)
 
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
 
   # 수동 실행도 가능
   workflow_dispatch:
@@ -98,6 +98,23 @@ jobs:
           pip install tweepy
           python3 post_to_twitter.py
 
+      - name: Send Push Notification
+        if: success()
+        env:
+          ONESIGNAL_APP_ID: "7d84373c-c82b-45e6-bb6f-edb1fe4735e5"
+          ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
+        run: |
+          curl -X POST "https://onesignal.com/api/v1/notifications" \
+            -H "Authorization: Basic $ONESIGNAL_REST_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "app_id": "'"$ONESIGNAL_APP_ID"'",
+              "included_segments": ["All"],
+              "headings": {"en": "🎧 오늘의 뉴스가 도착했어요!"},
+              "contents": {"en": "AI가 요약한 오늘의 뉴스 팟캐스트를 들어보세요"},
+              "url": "https://dailynewspod.com"
+            }'
+
       - name: Create summary
         if: success()
         run: |
@@ -115,5 +132,6 @@ jobs:
           if [ -n "${{ steps.twitter.outputs.tweet_url }}" ]; then
             echo "- 🐦 Twitter: ${{ steps.twitter.outputs.tweet_url }}" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "- 🔔 Push notification sent!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Run ID:** ${{ github.run_number }}-${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
