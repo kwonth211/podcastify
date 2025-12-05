@@ -4,8 +4,9 @@ Twitter(X) 자동 포스팅 스크립트
 데일리 팟캐스트 생성 후 홍보 트윗을 자동으로 올립니다.
 """
 
-import json
+import glob
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,30 +14,50 @@ from typing import List, Optional
 import tweepy
 
 
-def load_headlines(filepath: str = "data/urls/daily_headlines.json") -> Optional[List[str]]:
+def load_topics_from_timeline(timeline_dir: str = "data/transcripts") -> Optional[List[str]]:
     """
-    저장된 헤드라인을 로드합니다.
+    타임라인 파일에서 토픽을 로드합니다.
     
     Args:
-        filepath: 헤드라인 JSON 파일 경로
+        timeline_dir: 타임라인 파일 디렉토리
         
     Returns:
-        헤드라인 리스트 또는 None
+        토픽 리스트 또는 None
     """
     try:
-        if Path(filepath).exists():
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("headlines", [])
+        # 가장 최근 타임라인 파일 찾기
+        timeline_files = glob.glob(os.path.join(timeline_dir, "timeline_*.txt"))
+        if not timeline_files:
+            print("⚠️ 타임라인 파일을 찾을 수 없습니다")
+            return None
+        
+        latest_file = max(timeline_files, key=os.path.getmtime)
+        print(f"📄 타임라인 파일 로드: {latest_file}")
+        
+        with open(latest_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 타임라인에서 토픽 추출 (형식: [00:00] 토픽 제목)
+        topics = []
+        for line in content.split('\n'):
+            match = re.match(r'\[[\d:]+\]\s*(.+)', line.strip())
+            if match:
+                topic = match.group(1).strip()
+                if topic:
+                    topics.append(topic)
+        
+        print(f"✅ {len(topics)}개 토픽 추출 완료")
+        return topics if topics else None
+        
     except Exception as e:
-        print(f"⚠️ 헤드라인 로드 실패: {e}")
+        print(f"⚠️ 타임라인 로드 실패: {e}")
     return None
 
 
 def create_tweet_message() -> str:
     """
     트윗 메시지를 생성합니다.
-    헤드라인이 있으면 포함시킵니다.
+    타임라인에서 토픽을 추출하여 포함시킵니다.
     """
     today = datetime.now().strftime("%-m월 %-d일")
     weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
@@ -46,34 +67,34 @@ def create_tweet_message() -> str:
     website_url = "https://dailynewspod.com"
     hashtags = "#뉴스팟캐스트 #데일리뉴스"
     
-    # 헤드라인 로드
-    headlines = load_headlines()
+    # 타임라인에서 토픽 로드
+    topics = load_topics_from_timeline()
     
-    if headlines:
-        # 헤드라인이 있으면 포함하는 메시지
+    if topics:
+        # 토픽이 있으면 포함하는 메시지
         header = f"🎙️ {today}({weekday}) 뉴스 팟캐스트\n\n"
         footer = f"\n🔗 {website_url}\n\n{hashtags}"
         
         # 사용 가능한 글자수 계산 (280자 - 헤더 - 푸터)
         available_chars = 280 - len(header) - len(footer) - 10  # 여유분 10자
         
-        # 헤드라인 추가 (글자수 내에서 최대한)
-        headline_lines = []
-        for headline in headlines[:3]:
-            # 헤드라인이 너무 길면 자르기
-            if len(headline) > 35:
-                headline = headline[:32] + "..."
-            line = f"• {headline}\n"
+        # 토픽 추가 (글자수 내에서 최대한)
+        topic_lines = []
+        for topic in topics[:4]:  # 최대 4개
+            # 토픽이 너무 길면 자르기
+            if len(topic) > 35:
+                topic = topic[:32] + "..."
+            line = f"• {topic}\n"
             
             # 글자수 체크
-            if sum(len(l) for l in headline_lines) + len(line) <= available_chars:
-                headline_lines.append(line)
+            if sum(len(l) for l in topic_lines) + len(line) <= available_chars:
+                topic_lines.append(line)
             else:
                 break
         
-        message = header + "".join(headline_lines) + footer
+        message = header + "".join(topic_lines) + footer
     else:
-        # 헤드라인이 없으면 기본 메시지
+        # 토픽이 없으면 기본 메시지
         messages = [
             f"🎙️ {today}({weekday}) 데일리 뉴스가 도착했습니다!\n\n오늘의 주요 뉴스를 팟캐스트로 들어보세요.",
             f"☀️ 좋은 아침이에요! {today}({weekday}) 뉴스 팟캐스트가 준비됐습니다.\n\n출근길에 가볍게 들어보세요 🎧",
