@@ -104,14 +104,15 @@ jobs:
           ONESIGNAL_APP_ID: "7d84373c-c82b-45e6-bb6f-edb1fe4735e5"
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
         run: |
+          TODAY_DATE=$(TZ='Asia/Seoul' date '+%-m월 %-d일')
           curl -X POST "https://onesignal.com/api/v1/notifications" \
             -H "Authorization: Basic $ONESIGNAL_REST_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{
               "app_id": "'"$ONESIGNAL_APP_ID"'",
               "included_segments": ["All"],
-              "headings": {"en": "🎧 오늘의 뉴스가 도착했어요!"},
-              "contents": {"en": "AI가 요약한 오늘의 뉴스 팟캐스트를 들어보세요"},
+              "headings": {"ko": "'"$TODAY_DATE"' 뉴스가 도착했어요"},
+              "contents": {"ko": "오늘의 뉴스 팟캐스트를 들어보세요"},
               "url": "https://dailynewspod.com"
             }'
 
