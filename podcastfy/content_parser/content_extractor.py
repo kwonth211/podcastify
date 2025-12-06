@@ -115,7 +115,7 @@ class ContentExtractor:
 		try:
 			import google.generativeai as genai
 
-			model = genai.GenerativeModel('models/gemini-3-pro-preview')
+			model = genai.GenerativeModel('models/gemini-2.5-flash')
 			topic_prompt = f'Be detailed. Search for {topic}'
 			response = model.generate_content(contents=topic_prompt, tools='google_search_retrieval')
 			
