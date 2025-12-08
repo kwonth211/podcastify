@@ -11,7 +11,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 import tweepy
+
+# 한국 시간대
+KST = ZoneInfo("Asia/Seoul")
 
 
 def load_topics_from_timeline(timeline_dir: str = "data/transcripts") -> Optional[List[str]]:
@@ -59,9 +63,11 @@ def create_tweet_message() -> str:
     트윗 메시지를 생성합니다.
     타임라인에서 토픽을 추출하여 포함시킵니다.
     """
-    today = datetime.now().strftime("%-m월 %-d일")
+    # 한국 시간(KST) 기준으로 날짜 표시
+    now_kst = datetime.now(KST)
+    today = now_kst.strftime("%-m월 %-d일")
     weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
-    weekday = weekday_kr[datetime.now().weekday()]
+    weekday = weekday_kr[now_kst.weekday()]
     
     # 웹사이트 URL (고정)
     website_url = "https://dailynewspod.com"
@@ -102,7 +108,7 @@ def create_tweet_message() -> str:
         ]
         
         # 날짜 기반으로 메시지 선택 (매일 다른 메시지)
-        message_index = datetime.now().day % len(messages)
+        message_index = now_kst.day % len(messages)
         message = messages[message_index]
         
         # 웹사이트 URL 및 해시태그 추가
