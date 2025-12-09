@@ -52,12 +52,16 @@ class GeminiTTS(TTSProvider):
                 text=text
             )
             
-            # Parse language code from voice ID (e.g., "en-IN" from "en-IN-Journey-D")
+            # Parse language code from voice ID (e.g., "ko-KR" from "ko-KR-Chirp3-HD-Charon")
             language_code = "-".join(voice.split("-")[:2])
+            
+            # Extract voice name (e.g., "Charon" from "ko-KR-Chirp3-HD-Charon")
+            voice_name = voice.split("-")[-1]
 
             voice_params = texttospeech_v1beta1.VoiceSelectionParams(
                 language_code=language_code,
-                name=voice,
+                name=voice_name,
+                model="gemini-2.5-pro-tts"
             )
             
             # Set audio config
@@ -69,8 +73,7 @@ class GeminiTTS(TTSProvider):
             response = self.client.synthesize_speech(
                 input=synthesis_input,
                 voice=voice_params,
-                audio_config=audio_config,
-                model="gemini-2.5-pro-tts"
+                audio_config=audio_config
             )
             
             return response.audio_content
