@@ -69,7 +69,8 @@ class GeminiTTS(TTSProvider):
             response = self.client.synthesize_speech(
                 input=synthesis_input,
                 voice=voice_params,
-                audio_config=audio_config
+                audio_config=audio_config,
+                model="gemini-2.5-pro-tts"
             )
             
             return response.audio_content

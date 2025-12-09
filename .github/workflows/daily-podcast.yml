@@ -7,9 +7,9 @@ on:
   schedule:
     - cron: "0 22 * * *" # 매일 UTC 22시 (한국시간 오전 7시)
 
-  # push:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - test-gemini3
 
   # 수동 실행도 가능
   workflow_dispatch:
