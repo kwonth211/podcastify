@@ -102,7 +102,7 @@ class ContentExtractor:
 			logger.error(f"Error extracting content with headline from {source}: {str(e)}")
 			raise
 	
-	def generate_topic_content(self, topic: str) -> str:
+	def generate_topic_content(self, topic: str) -> tuple:
 		"""
 		Generate content based on a given topic using a generative model.
 
@@ -110,16 +110,54 @@ class ContentExtractor:
 			topic (str): The topic to generate content for.
 
 		Returns:
-			str: Generated content based on the topic.
+			tuple: (content, sources) where sources is a list of dicts with url and title
 		"""
 		try:
-			import google.generativeai as genai
-
-			model = genai.GenerativeModel('models/gemini-2.5-flash')
-			topic_prompt = f'Be detailed. Search for {topic}'
-			response = model.generate_content(contents=topic_prompt, tools='google_search_retrieval')
+			import os
+			from google import genai
+			from google.genai import types
 			
-			return response.candidates[0].content.parts[0].text
+			api_key = os.environ.get("GEMINI_API_KEY")
+			client = genai.Client(api_key=api_key)
+			
+			topic_prompt = f'Be detailed. Search for {topic}'
+			response = client.models.generate_content(
+				model='gemini-2.5-flash',
+				contents=topic_prompt,
+				config=types.GenerateContentConfig(
+					tools=[types.Tool(google_search=types.GoogleSearch())]
+				)
+			)
+			
+			# Extract grounding sources from response
+			sources = []
+			try:
+				if hasattr(response, 'candidates') and response.candidates:
+					candidate = response.candidates[0]
+					if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+						grounding = candidate.grounding_metadata
+						# Extract from grounding_chunks
+						if hasattr(grounding, 'grounding_chunks') and grounding.grounding_chunks:
+							for chunk in grounding.grounding_chunks:
+								if hasattr(chunk, 'web') and chunk.web:
+									source = {
+										'url': getattr(chunk.web, 'uri', ''),
+										'title': getattr(chunk.web, 'title', '')
+									}
+									if source['url'] and source not in sources:
+										sources.append(source)
+						# Also try grounding_supports
+						if hasattr(grounding, 'grounding_supports') and grounding.grounding_supports:
+							for support in grounding.grounding_supports:
+								if hasattr(support, 'grounding_chunk_indices'):
+									pass  # Already handled in grounding_chunks
+						# Try search_entry_point for query info
+						if hasattr(grounding, 'search_entry_point') and grounding.search_entry_point:
+							logger.info(f"Search entry point: {grounding.search_entry_point}")
+			except Exception as e:
+				logger.warning(f"Could not extract grounding sources: {e}")
+			
+			return response.text, sources
 		except Exception as e:
 			logger.error(f"Error generating content for topic '{topic}': {str(e)}")
 			raise

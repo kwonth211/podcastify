@@ -37,6 +37,22 @@ import logging
 
 logger = setup_logger(__name__)
 
+# Module-level variable to store last Gemini search sources
+_last_gemini_sources: List[Dict[str, str]] = []
+
+
+def get_last_gemini_sources() -> List[Dict[str, str]]:
+    """Get the sources from the last Gemini search."""
+    global _last_gemini_sources
+    return _last_gemini_sources
+
+
+def clear_gemini_sources():
+    """Clear the stored Gemini sources."""
+    global _last_gemini_sources
+    _last_gemini_sources = []
+
+
 app = typer.Typer()
 
 os.environ["LANGCHAIN_TRACING_V2"] = "False"
@@ -103,24 +119,33 @@ def process_content(
                     contents_list.append(f"Article {i+1}: {headline}\n{content}")
                 combined_content = "\n\n".join(contents_list)
 
+            # Track sources from Gemini search
+            gemini_sources = []
+            
             if text:
                 if longform and len(text.strip()) < 100:
                     logger.info("Text too short for direct long-form generation. Extracting context...")
-                    expanded_content = content_extractor.generate_topic_content(text)
+                    expanded_content, text_sources = content_extractor.generate_topic_content(text)
                     combined_content += f"\n\n{expanded_content}"
+                    gemini_sources.extend(text_sources)
                 else:
                     combined_content += f"\n\n{text}"
 
             if topic:
-                topic_content = content_extractor.generate_topic_content(topic)
+                topic_content, topic_sources = content_extractor.generate_topic_content(topic)
                 combined_content += f"\n\n{topic_content}"
+                gemini_sources.extend(topic_sources)
+            
+            # Store sources in module-level variable for API to access
+            global _last_gemini_sources
+            _last_gemini_sources = gemini_sources
 
             # Generate Q&A content using output directory from conversation config
-            # Use KST (Korea Standard Time) for date string
+            # Use KST (Korea Standard Time) for timestamp string
             kst = pytz.timezone('Asia/Seoul')
             kst_time = datetime.now(kst)
-            date_str = kst_time.strftime("%Y%m%d")
-            transcript_filename = f"transcript_{date_str}.txt"
+            timestamp_str = kst_time.strftime("%Y%m%d_%H%M%S")
+            transcript_filename = f"transcript_{timestamp_str}.txt"
             transcript_filepath = os.path.join(
                 output_directories.get("transcripts", "data/transcripts"),
                 transcript_filename,
@@ -143,11 +168,8 @@ def process_content(
                 conversation_config=conv_config.to_dict(),
             )
 
-            # Use KST (Korea Standard Time) for date string
-            kst = pytz.timezone('Asia/Seoul')
-            kst_time = datetime.now(kst)
-            date_str = kst_time.strftime("%Y%m%d")
-            audio_filename = f"podcast_{date_str}.mp3"
+            # Use the same timestamp for audio file
+            audio_filename = f"podcast_{timestamp_str}.mp3"
             audio_file = os.path.join(
                 output_directories.get("audio", "data/audio"), audio_filename
             )
@@ -155,16 +177,20 @@ def process_content(
             logger.info(f"Podcast generated successfully using {tts_model} TTS model")
             
             # Generate timeline from transcript using actual audio duration
-            if content_generator:
-                audio = AudioSegment.from_file(audio_file)
-                audio_duration_seconds = len(audio) / 1000.0
-                timeline_file = os.path.join(
-                    output_directories.get("transcripts", "data/transcripts"),
-                    f"timeline_{date_str}.txt"
-                )
-                content_generator.generate_timeline_from_transcript(
-                    qa_content, audio_duration_seconds, timeline_file
-                )
+            # Wrapped in try-except to not fail the entire request if timeline generation fails
+            try:
+                if content_generator:
+                    audio = AudioSegment.from_file(audio_file)
+                    audio_duration_seconds = len(audio) / 1000.0
+                    timeline_file = os.path.join(
+                        output_directories.get("transcripts", "data/transcripts"),
+                        f"timeline_{timestamp_str}.txt"
+                    )
+                    content_generator.generate_timeline_from_transcript(
+                        qa_content, audio_duration_seconds, timeline_file
+                    )
+            except Exception as timeline_error:
+                logger.warning(f"Timeline generation failed (non-critical): {str(timeline_error)}")
             
             return audio_file
         else:

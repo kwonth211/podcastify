@@ -17,11 +17,43 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.llms.llamafile import Llamafile
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain import hub
+import json
+from langchainhub import Client as HubClient
+
+_hub_client = HubClient()
+
+def hub_pull(prompt_name: str):
+    """Pull prompt from hub and convert to ChatPromptTemplate"""
+    try:
+        result = _hub_client.pull(prompt_name)
+        if isinstance(result, str):
+            # Parse JSON and create ChatPromptTemplate manually
+            data = json.loads(result)
+            if data.get("type") == "constructor" and "kwargs" in data:
+                kwargs = data["kwargs"]
+                messages = kwargs.get("messages", [])
+                if messages:
+                    msg = messages[0]
+                    if msg.get("type") == "constructor" and "kwargs" in msg:
+                        prompt_kwargs = msg["kwargs"].get("prompt", {}).get("kwargs", {})
+                        template = prompt_kwargs.get("template", "")
+                        return ChatPromptTemplate.from_messages([
+                            HumanMessagePromptTemplate.from_template(template)
+                        ])
+            # Fallback
+            return ChatPromptTemplate.from_messages([
+                HumanMessagePromptTemplate.from_template("{input}")
+            ])
+        return result
+    except Exception as e:
+        # Return a simple fallback prompt
+        return ChatPromptTemplate.from_messages([
+            HumanMessagePromptTemplate.from_template("{input}")
+        ])
 from podcastfy.utils.config_conversation import load_conversation_config
 from podcastfy.utils.config import load_config
 import logging
-from langchain.prompts import HumanMessagePromptTemplate
+from langchain_core.prompts import HumanMessagePromptTemplate
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -288,17 +320,35 @@ class ContentCleanerMixin:
     @staticmethod
     def _clean_scratchpad(text: str) -> str:
         """
-        Remove scratchpad blocks, plaintext blocks, standalone triple backticks, any string enclosed in brackets, and underscores around words.
+        Light cleanup of LLM output. Heavy lifting is done by prompt engineering.
+        Only removes obvious artifacts and ensures proper formatting.
         """
         try:
             import re
-            pattern = r'```scratchpad\n.*?```\n?|```plaintext\n.*?```\n?|```\n?|\[.*?\]'
-            cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
-            # Remove "xml" if followed by </Person1> or </Person2>
-            cleaned_text = re.sub(r"xml(?=\s*</Person[12]>)", "", cleaned_text)
-            # Remove underscores around words
-            cleaned_text = re.sub(r'_(.*?)_', r'\1', cleaned_text)
-            return cleaned_text.strip()
+            
+            # Step 1: Find first <Person1> or <Person2> tag and remove everything before it
+            first_person = re.search(r'<Person[12]>', text)
+            if first_person:
+                text = text[first_person.start():]
+            
+            # Step 2: Remove code blocks and obvious meta patterns
+            text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+            text = re.sub(r'\(scratchpad\).*?(?=<Person[12]>|$)', '', text, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Step 3: Clean up formatting
+            text = re.sub(r"xml(?=\s*</Person[12]>)", "", text)
+            text = re.sub(r'_(.*?)_', r'\1', text)
+            text = re.sub(r'\n\s*\n\s*\n', '\n', text)
+            
+            # Step 4: Remove empty Person tags
+            text = re.sub(r'<Person[12]>\s*</Person[12]>', '', text)
+            
+            # Step 7: Final validation
+            if not re.search(r'<Person[12]>.*?[가-힣A-Za-z]{10,}.*?</Person[12]>', text, re.DOTALL):
+                logger.warning("Cleaned text may not contain substantial dialogue")
+            
+            return text.strip()
+            
         except Exception as e:
             logger.error(f"Error cleaning scratchpad content: {str(e)}")
             return text
@@ -312,7 +362,13 @@ class ContentCleanerMixin:
         Remove unsupported TSS markup tags while preserving supported ones.
         """
         try:
+            # Log first 500 chars of original input for debugging
+            logger.debug(f"Original LLM output (first 500 chars): {input_text[:500] if len(input_text) > 500 else input_text}")
+            
             input_text = ContentCleanerMixin._clean_scratchpad(input_text)
+            
+            # Log after scratchpad cleaning
+            logger.debug(f"After scratchpad cleaning (first 500 chars): {input_text[:500] if len(input_text) > 500 else input_text}")
             supported_tags = ["speak", "lang", "p", "phoneme", "s", "sub"]
             supported_tags.extend(additional_tags)
 
@@ -329,13 +385,21 @@ class ContentCleanerMixin:
                     flags=re.DOTALL,
                 )
             
-
+            # Validate that cleaned text contains actual dialogue with substantial content
+            # Check for Person tags with content (allowing nested tags like <phoneme>)
+            dialogue_pattern = re.search(r'<Person[12]>.*?[가-힣A-Za-z]{10,}.*?</Person[12]>', cleaned_text, re.DOTALL)
+            if not dialogue_pattern:
+                # Fallback: check if there's at least a Person tag with Korean/English content
+                simple_check = re.search(r'<Person[12]>.*[가-힣]{5,}', cleaned_text, re.DOTALL)
+                if not simple_check:
+                    logger.error(f"No valid dialogue content found. Cleaned text (first 1000 chars): {cleaned_text[:1000]}")
+                    raise ValueError("LLM did not generate valid dialogue. The response contained only planning/scratchpad content.")
 
             return cleaned_text.strip()
             
         except Exception as e:
             logger.error(f"Error cleaning TSS markup: {str(e)}")
-            return input_text
+            raise
 
 
 class ContentGenerationStrategy(ABC):
@@ -557,8 +621,8 @@ class LongFormContentStrategy(ContentGenerationStrategy, ContentCleanerMixin):
             # Get prompt templates from hub
             logger.debug("Pulling prompt templates from hub")
             try:
-                clean_transcript_prompt = hub.pull(f"{self.content_generator_config['cleaner_prompt_template']}:{self.content_generator_config['cleaner_prompt_commit']}")
-                rewrite_prompt = hub.pull(f"{self.content_generator_config['rewriter_prompt_template']}:{self.content_generator_config['rewriter_prompt_commit']}")
+                clean_transcript_prompt = hub_pull(f"{self.content_generator_config['cleaner_prompt_template']}:{self.content_generator_config['cleaner_prompt_commit']}")
+                rewrite_prompt = hub_pull(f"{self.content_generator_config['rewriter_prompt_template']}:{self.content_generator_config['rewriter_prompt_commit']}")
                 logger.debug("Successfully pulled prompt templates")
             except Exception as e:
                 logger.error(f"Error pulling prompt templates: {str(e)}")
@@ -782,7 +846,7 @@ class ContentGenerator:
             template = base_template
             commit = base_commit
 
-        prompt_template = hub.pull(f"{template}:{commit}")
+        prompt_template = hub_pull(f"{template}:{commit}")
 
         image_path_keys = []
         messages = []
@@ -808,6 +872,28 @@ class ContentGenerator:
         )
         user_instructions = self.config_conversation.get("user_instructions", "")
 
+        # CRITICAL: Output format rules to prevent scratchpad/planning in output
+        output_format_rules = """
+=== CRITICAL OUTPUT FORMAT RULES (MUST FOLLOW) ===
+1. Your response MUST start IMMEDIATELY with <Person1> tag - NO exceptions
+2. Output ONLY dialogue inside <Person1> and <Person2> tags
+3. NEVER output: scratchpad, planning, analysis, strategy, notes, meta-commentary
+4. NEVER write phrases like: "This is wrong", "Revised plan", "Final check", "setting the tone"
+5. NEVER include numbered outlines, bullet points, or self-reflection
+6. Every single line of output must be inside <Person1> or <Person2> tags
+7. Start speaking naturally as if you ARE the podcast host, not planning to be one
+
+WRONG (will be rejected):
+(scratchpad) Let me plan...
+1. Opening strategy
+<Person1>Hello</Person1>
+
+CORRECT (required format):
+<Person1>안녕하세요! 오늘의 뉴스 요약입니다.</Person1>
+<Person2>네, 정말 흥미로운 소식들이 많네요!</Person2>
+=== END OF OUTPUT FORMAT RULES ===
+
+"""
         if user_instructions:
             user_instructions = (
                 "[[MAKE SURE TO FOLLOW THESE INSTRUCTIONS OVERRIDING THE PROMPT TEMPLATE IN CASE OF CONFLICT: "
@@ -818,7 +904,7 @@ class ContentGenerator:
             user_instructions = ""
 
         new_system_message = (
-            prompt_template.messages[0].prompt.template + "\n" + user_instructions
+            output_format_rules + prompt_template.messages[0].prompt.template + "\n" + user_instructions
         )
 
         # Compose messages from podcastfy_prompt_template and user_prompt_template

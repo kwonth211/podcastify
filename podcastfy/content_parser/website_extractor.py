@@ -2,7 +2,7 @@
 Website Extractor Module
 
 This module is responsible for extracting clean text content from websites using
-Playwright to retrieve rendered HTML and BeautifulSoup for local parsing.
+requests and BeautifulSoup for parsing.
 """
 
 import requests
@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from podcastfy.utils.config import load_config
 from typing import List, Optional
-from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +42,12 @@ class WebsiteExtractor:
 			Exception: If there's an error in extracting the content.
 		"""
 		try:
-			# Normalize the URL
 			normalized_url = self.normalize_url(url)
-
-			# Fetch the page HTML using Playwright (handles bot detection and JS rendering)
-			html_content = self.fetch_with_playwright(normalized_url)
-
-			# Parse the page content with BeautifulSoup
+			html_content = self.fetch_url(normalized_url)
 			soup = BeautifulSoup(html_content, 'html.parser')
-
-			# Remove unwanted elements
 			self.remove_unwanted_elements(soup)
-
-			# Extract and clean the text content
-			raw_text = soup.get_text(separator="\n")  # Get all text content
+			raw_text = soup.get_text(separator="\n")
 			cleaned_content = self.clean_content(raw_text)
-
 			return cleaned_content
 		except requests.RequestException as e:
 			logger.error(f"Failed to extract content from {url}: {str(e)}")
@@ -78,23 +67,16 @@ class WebsiteExtractor:
 			Optional[str]: Extracted headline, or None if not found.
 		"""
 		try:
-			# Normalize the URL
 			normalized_url = self.normalize_url(url)
-
-			# Fetch the page HTML using Playwright
-			html_content = self.fetch_with_playwright(normalized_url)
-
-			# Parse the page content with BeautifulSoup
+			html_content = self.fetch_url(normalized_url)
 			soup = BeautifulSoup(html_content, 'html.parser')
 
-			# Try multiple strategies to find the headline
 			# 1. Try <title> tag
 			title_tag = soup.find('title')
 			if title_tag and title_tag.get_text().strip():
 				headline = title_tag.get_text().strip()
-				# Clean up common title suffixes
-				headline = re.sub(r'\s*[-|]\s*.*$', '', headline)  # Remove " - Site Name" patterns
-				if len(headline) > 10:  # Only use if meaningful
+				headline = re.sub(r'\s*[-|]\s*.*$', '', headline)
+				if len(headline) > 10:
 					return headline
 
 			# 2. Try <h1> tag
@@ -118,7 +100,7 @@ class WebsiteExtractor:
 				if len(headline) > 10:
 					return headline
 
-			# 5. Try article header or main heading
+			# 5. Try article header
 			article_header = soup.find('article')
 			if article_header:
 				header_h1 = article_header.find('h1')
@@ -134,53 +116,26 @@ class WebsiteExtractor:
 			logger.error(f"Error extracting headline from {url}: {str(e)}")
 			return None
 
-	def fetch_with_playwright(self, url: str) -> str:
+	def fetch_url(self, url: str) -> str:
 		"""
-		Use Playwright to navigate to the URL and return the rendered HTML.
+		Fetch URL content using requests.
 
 		Args:
 			url (str): The URL to fetch.
 
 		Returns:
-			str: The page HTML after network is idle.
+			str: The page HTML content.
 		"""
-		try:
-			with sync_playwright() as p:
-				browser = p.chromium.launch(headless=True)
-				context = browser.new_context(
-					user_agent=self.user_agent,
-					ignore_https_errors=True,
-				)
-				page = context.new_page()
-				# Extra headers to mimic a real browser
-				page.set_extra_http_headers({
-					"Accept-Language": "en-US,en;q=0.9",
-				})
-				page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
-				# Optionally wait for DOM to be ready
-				page.wait_for_timeout(500)
-				html_content = page.content()
-				context.close()
-				browser.close()
-				return html_content
-		except Exception as e:
-			if "asyncio loop" in str(e).lower() or "async" in str(e).lower():
-				return self.fetch_with_requests(url)
-			raise Exception(f"An unexpected error occurred while extracting content from {url}: {str(e)}")
-	def fetch_with_requests(self, url: str) -> str:
-		"""
-		Fallback method using requests when Playwright fails in async contexts.
-		"""
-		logger.warning(f"Playwright failed in async context, using requests: {url}")
 		headers = {
 			'User-Agent': self.user_agent,
 			'Accept-Language': 'en-US,en;q=0.9',
 		}
 		response = requests.get(url, headers=headers, timeout=self.timeout)
 		return response.text
+
 	def normalize_url(self, url: str) -> str:
 		"""
-		Normalize the given URL by adding scheme if missing and ensuring it's a valid URL.
+		Normalize the given URL by adding scheme if missing.
 
 		Args:
 			url (str): The URL to normalize.
@@ -191,17 +146,11 @@ class WebsiteExtractor:
 		Raises:
 			ValueError: If the URL is invalid after normalization attempts.
 		"""
-		# If the URL doesn't start with a scheme, add 'https://'
 		if not url.startswith(('http://', 'https://')):
 			url = 'https://' + url
-
-		# Parse the URL
 		parsed = urlparse(url)
-
-		# Ensure the URL has a valid scheme and netloc
 		if not all([parsed.scheme, parsed.netloc]):
 			raise ValueError(f"Invalid URL: {url}")
-
 		return parsed.geturl()
 
 	def remove_unwanted_elements(self, soup: BeautifulSoup) -> None:
@@ -217,8 +166,7 @@ class WebsiteExtractor:
 
 	def clean_content(self, content: str) -> str:
 		"""
-		Clean the extracted content by removing unnecessary whitespace and applying
-		custom cleaning patterns.
+		Clean the extracted content.
 
 		Args:
 			content (str): The content to clean.
@@ -226,50 +174,9 @@ class WebsiteExtractor:
 		Returns:
 			str: Cleaned text content.
 		"""
-		# Decode HTML entities
 		cleaned_content = html.unescape(content)
-
-		# Remove extra whitespace
 		cleaned_content = re.sub(r'\s+', ' ', cleaned_content)
-
-		# Remove extra newlines
 		cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
-
-		# Apply custom cleaning patterns from config
 		for pattern in self.remove_patterns:
 			cleaned_content = re.sub(pattern, '', cleaned_content)
-
 		return cleaned_content.strip()
-
-def main(seed: int = 42) -> None:
-	"""
-	Main function to test the WebsiteExtractor class.
-	"""
-	logging.basicConfig(level=logging.INFO)
-
-	# Create an instance of WebsiteExtractor
-	extractor = WebsiteExtractor()
-
-	# Test URLs
-	test_urls: List[str] = [
-		"www.souzatharsis.com",
-		"https://en.wikipedia.org/wiki/Web_scraping"
-	]
-
-	for url in test_urls:
-		try:
-			logger.info(f"Extracting content from: {url}")
-			content = extractor.extract_content(url)
-
-			# Print the first 500 characters of the extracted content
-			logger.info(f"Extracted content (first 500 characters):\n{content[:500]}...")
-
-			# Print the total length of the extracted content
-			logger.info(f"Total length of extracted content: {len(content)} characters")
-			logger.info("-" * 50)
-
-		except Exception as e:
-			logger.error(f"An error occurred while processing {url}: {str(e)}")
-
-if __name__ == "__main__":
-	main()

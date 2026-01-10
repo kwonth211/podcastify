@@ -1,37 +1,41 @@
-# Use Ubuntu 24.04 as base image
-FROM ubuntu:24.04
+# Slim News Podcast API Dockerfile
+# 목표: 3GB → ~1GB
 
-# Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+FROM python:3.12-slim
 
-# Install system dependencies
+# Install only essential system dependencies
 RUN apt-get update && \
-    apt-get install -y \
-    python3-full \
-    python3-pip \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Create and activate virtual environment
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
+# Copy requirements
+COPY requirements.txt .
 
-# Install podcastfy from PyPI
-RUN pip install --no-cache-dir podcastfy
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy only necessary code
+COPY podcastfy/ ./podcastfy/
+COPY data/ ./data/
+
+# Create necessary directories
+RUN mkdir -p /app/data/audio/tmp /app/data/transcripts /app/data/sources
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV HOST=0.0.0.0
+ENV PORT=8000
 
-# Verify installations
-RUN echo "Verifying installations:" && \
-    echo "Ubuntu version:" && cat /etc/os-release && \
-    echo "FFmpeg version:" && ffmpeg -version && \
-    echo "Python version:" && python3 --version && \
-    echo "Pip version:" && pip --version && \
-    echo "Installed packages:" && pip list
+EXPOSE 8000
 
-# Command to run when container starts
-CMD ["python3"]
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["python", "-m", "podcastfy.api.news_podcast_api"]

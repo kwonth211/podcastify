@@ -1,50 +1,20 @@
-version: '3.8'
-
 services:
-  podcastfy:
+  news-podcast-api:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HOST=0.0.0.0
+      - PORT=8000
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python3", "-c", "import podcastfy"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  podcastfy-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - /opt/venv:/opt/venv
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONPATH=/app
-      - DEBIAN_FRONTEND=noninteractive
-    ports:
-      - "8001:8000"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import podcastfy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - /opt/venv:/opt/venv
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONPATH=/app
-    command: pytest -n auto --dist loadfile
+    restart: unless-stopped

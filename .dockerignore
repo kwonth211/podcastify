@@ -1,18 +1,61 @@
+# Git
 .git
 .gitignore
-.github
+
+# Python
 __pycache__
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
-env/
+.venv
 venv/
-.env
-*.log
-.pytest_cache/
-.coverage
-htmlcov/
+ENV/
+
+# IDE
+.vscode
+.idea
+.cursor
+*.swp
+*.swo
+
+# Test & Docs (삭제됨)
+tests/
+docs/
+paper/
+
+# Build
+*.egg-info
 dist/
 build/
-*.egg-info/
+
+# Data (샘플 제외)
+data/images/
+data/pdf/
+data/urls/
+usage/
+
+# Misc
+*.md
+!README.md
+*.txt
+!requirements*.txt
+*.ipynb
+*.log
+.env.example
+Makefile
+make.sh
+procfile
+*.yml
+!docker-compose.yml
+*.yaml
+!podcastfy/*.yaml
+
+# Large files
+*.mp3
+*.mp4
+*.wav
+*.pdf
+*.jpeg
+*.jpg
+*.png
