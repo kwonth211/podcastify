@@ -1,12 +1,18 @@
 # ============================================
-# Minimal Requirements for News Podcast API
-# 핵심 기능만 포함 (약 800MB~1GB 예상)
+# Daily News Podcast API - Requirements
+# Full Backend with Supabase Integration
 # ============================================
 
 # === API Server ===
 fastapi>=0.103.0
 uvicorn>=0.23.0
 python-dotenv>=1.0.0
+
+# === Supabase ===
+supabase>=2.0.0
+
+# === Authentication ===
+PyJWT>=2.8.0
 
 # === Gemini API (LLM + Search) ===
 google-genai>=1.0.0
@@ -41,9 +47,19 @@ aiohttp>=3.9.0
 
 # === Data Processing ===
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# === Scheduler ===
+APScheduler>=3.10.0
+
+# === Payments ===
+stripe>=7.0.0
 
 # === YouTube (Optional) ===
 youtube-transcript-api>=0.6.0
 
 # === PDF (Optional) ===
 pymupdf>=1.24.0
+
+# === Email (Optional) ===
+# sendgrid>=6.10.0

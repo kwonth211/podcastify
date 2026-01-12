@@ -39,11 +39,29 @@ for env_path in possible_env_paths:
 
 # Docker에서는 env_file로 이미 주입되므로 경고 불필요
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Security, Request
+from fastapi.security import APIKeyHeader
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
+
+# API Key 설정
+API_KEY = os.getenv("API_KEY", "")
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
+    """API 키 검증"""
+    if not API_KEY:
+        # API_KEY가 설정되지 않으면 인증 비활성화
+        return True
+    if api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key",
+            headers={"WWW-Authenticate": "API key required"}
+        )
+    return True
 
 from ..news_search import GeminiNewsSearch, GoogleNewsSearch, NEWS_CATEGORIES
 from ..client import generate_podcast, get_last_gemini_sources, clear_gemini_sources
@@ -167,6 +185,9 @@ class CategoryListResponse(BaseModel):
 # FastAPI Application
 # ============================================================================
 
+# 프로덕션 환경에서는 docs 비활성화
+ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() == "true"
+
 app = FastAPI(
     title="News Podcast API",
     description="""
@@ -183,8 +204,9 @@ app = FastAPI(
 - 중국에서 일어나는 뉴스
 """,
     version="1.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None
 )
 
 # CORS middleware
@@ -341,13 +363,13 @@ async def health_check():
 
 
 @app.get("/categories", response_model=CategoryListResponse)
-async def get_categories():
+async def get_categories(api_key: bool = Depends(verify_api_key)):
     """Get available news categories with localized names."""
     return CategoryListResponse(categories=NEWS_CATEGORIES)
 
 
 @app.post("/search/preview", response_model=NewsSearchResponse)
-async def preview_news_search(request: NewsPodcastRequest):
+async def preview_news_search(request: NewsPodcastRequest, api_key: bool = Depends(verify_api_key)):
     """
     Preview news search results without generating a podcast.
     
@@ -432,7 +454,7 @@ def save_sources_file(sources: list, prompt: str, timestamp_id: str, lang_code: 
 
 
 @app.post("/generate", response_model=NewsPodcastResponse)
-async def generate_news_podcast(request: NewsPodcastRequest):
+async def generate_news_podcast(request: NewsPodcastRequest, api_key: bool = Depends(verify_api_key)):
     """
     Generate a podcast from the latest news.
     
@@ -613,7 +635,7 @@ async def generate_news_podcast(request: NewsPodcastRequest):
 
 
 @app.get("/audio/{filename}")
-async def serve_audio(filename: str):
+async def serve_audio(filename: str, api_key: bool = Depends(verify_api_key)):
     """Serve generated audio file."""
     file_path = os.path.join(TEMP_AUDIO_DIR, filename)
     if not os.path.exists(file_path):
@@ -626,7 +648,7 @@ async def serve_audio(filename: str):
 
 
 @app.delete("/audio/{filename}")
-async def delete_audio(filename: str):
+async def delete_audio(filename: str, api_key: bool = Depends(verify_api_key)):
     """Delete a generated audio file."""
     file_path = os.path.join(TEMP_AUDIO_DIR, filename)
     if not os.path.exists(file_path):
@@ -636,7 +658,7 @@ async def delete_audio(filename: str):
 
 
 @app.get("/transcripts/{filename}")
-async def serve_transcript(filename: str):
+async def serve_transcript(filename: str, api_key: bool = Depends(verify_api_key)):
     """Serve transcript file."""
     transcripts_dir = os.path.join(BASE_DIR, "data", "transcripts")
     file_path = os.path.join(transcripts_dir, filename)
@@ -650,7 +672,7 @@ async def serve_transcript(filename: str):
 
 
 @app.get("/sources/{filename}")
-async def serve_sources(filename: str):
+async def serve_sources(filename: str, api_key: bool = Depends(verify_api_key)):
     """Serve news sources JSON file."""
     sources_dir = os.path.join(BASE_DIR, "data", "sources")
     file_path = os.path.join(sources_dir, filename)
